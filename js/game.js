@@ -52,6 +52,8 @@
       this.totalGroups = this.notes.length;
       this.baseScore = this.notes.reduce((s, n) => s + 50 * n.gems + (n.lenTicks / this.tm.res) * 25, 0);
       this.sectionIdx = -1;
+      this.rock = 0.5;
+      this.rockShown = 0.5;
     }
 
     get endTime() {
@@ -200,6 +202,7 @@
       this.hitGroups++;
       if (this.combo > this.maxCombo) this.maxCombo = this.combo;
       this.score += 50 * n.gems * this.multiplier;
+      this.rock = Math.min(1, this.rock + 0.025);
       if (n.len > 0) n.holding = true;
       if (this.leadMuted) { this.leadMuted = false; this.audio.setLeadMuted(false); }
       const now = performance.now();
@@ -215,6 +218,7 @@
     missNote(n) {
       n.missed = true;
       this.missGroups++;
+      this.rock = Math.max(0, this.rock - 0.07);
       if (n.phrase >= 0) this.brokenPhrases.add(n.phrase);
       if (this.combo >= 20) this.message('Racha perdida', '#f87171');
       this.combo = 0;
@@ -316,15 +320,17 @@
       this.ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
       const portrait = this.H >= this.W;
       this.cx = this.W / 2;
-      this.hitY = this.H * (portrait ? 0.84 : 0.8);
-      this.topY = this.H * (portrait ? 0.14 : 0.08);
-      this.halfW = Math.min(this.W * 0.48, this.H * (portrait ? 0.42 : 0.62));
-      this.farS = 0.25;
+      this.hitY = this.H * (portrait ? 0.85 : 0.84);
+      this.topY = this.H * (portrait ? 0.27 : 0.2);
+      this.halfW = Math.min(this.W * 0.44, this.H * (portrait ? 0.4 : 0.5));
+      this.farS = 0.2;
       this.horizonY = (this.topY - this.farS * this.hitY) / (1 - this.farS);
+      if (!this.renderer) this.renderer = new GH.Renderer(this);
+      this.renderer.resize(dpr);
     }
 
     proj(dt) {
-      const z = (dt / this.look) * 3;
+      const z = (dt / this.look) * (1 / this.farS - 1);
       const s = 1 / (1 + Math.max(-0.6, z));
       return { s, y: this.horizonY + (this.hitY - this.horizonY) * s };
     }
@@ -334,279 +340,9 @@
     }
 
     draw(t) {
-      const g = this.ctx2d, W = this.W, H = this.H;
-      const now = performance.now();
-      const bg = g.createLinearGradient(0, 0, 0, H);
-      bg.addColorStop(0, '#0b0820');
-      bg.addColorStop(1, this.spActive ? '#0c2d4a' : '#140a2a');
-      g.fillStyle = bg;
-      g.fillRect(0, 0, W, H);
-
-      const near = this.proj(-0.35), far = this.proj(this.look);
-      // Autopista
-      g.beginPath();
-      g.moveTo(this.cx - this.halfW * near.s, near.y);
-      g.lineTo(this.cx + this.halfW * near.s, near.y);
-      g.lineTo(this.cx + this.halfW * far.s, far.y);
-      g.lineTo(this.cx - this.halfW * far.s, far.y);
-      g.closePath();
-      const hw = g.createLinearGradient(0, far.y, 0, near.y);
-      hw.addColorStop(0, this.spActive ? 'rgba(56,189,248,0.05)' : 'rgba(30,27,60,0.2)');
-      hw.addColorStop(1, this.spActive ? 'rgba(56,189,248,0.35)' : 'rgba(40,35,80,0.95)');
-      g.fillStyle = hw;
-      g.fill();
-      g.strokeStyle = this.spActive ? '#38bdf8' : '#5b5490';
-      g.lineWidth = 2;
-      g.stroke();
-
-      // Separadores de carril
-      g.strokeStyle = 'rgba(255,255,255,0.08)';
-      g.lineWidth = 1;
-      for (let k = 1; k < 5; k++) {
-        const xn = -1 + k * 0.4;
-        g.beginPath();
-        g.moveTo(this.cx + xn * this.halfW * near.s, near.y);
-        g.lineTo(this.cx + xn * this.halfW * far.s, far.y);
-        g.stroke();
-      }
-      // Líneas de pulso
-      for (const b of this.tm.beatLines(t - 0.3, t + this.look)) {
-        const p = this.proj(b.time - t);
-        g.strokeStyle = b.measure ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.12)';
-        g.lineWidth = b.measure ? 2 : 1;
-        g.beginPath();
-        g.moveTo(this.cx - this.halfW * p.s, p.y);
-        g.lineTo(this.cx + this.halfW * p.s, p.y);
-        g.stroke();
-      }
-
-      // Notas visibles
-      const vis = [];
-      for (let i = Math.max(0, this.idx - 64); i < this.notes.length; i++) {
-        const n = this.notes[i];
-        if (n.time - t > this.look) break;
-        if (n.endTime < t - 0.4) continue;
-        vis.push(n);
-      }
-      // Sostenidos
-      for (const n of vis) {
-        if (n.len <= 0) continue;
-        const startT = n.hit ? Math.max(n.time, t) : n.time;
-        if (n.hit && !n.holding && !n.dropped && t >= n.endTime) continue;
-        const a = this.proj(Math.max(-0.35, startT - t)), b = this.proj(Math.min(this.look, n.endTime - t));
-        if (b.y >= a.y) continue;
-        const live = n.holding || (!n.hit && !n.missed);
-        const lanes = n.open ? [-1] : n.lanes;
-        for (const l of lanes) {
-          const w = n.open ? this.halfW * 0.9 : this.halfW * 0.07;
-          const xa = n.open ? this.cx : this.laneX(l, a.s), xb = n.open ? this.cx : this.laneX(l, b.s);
-          g.beginPath();
-          g.moveTo(xa - w * a.s, a.y); g.lineTo(xa + w * a.s, a.y);
-          g.lineTo(xb + w * b.s, b.y); g.lineTo(xb - w * b.s, b.y);
-          g.closePath();
-          let col = n.open ? OPEN_COLOR : GH.LANE_COLORS[l];
-          if (n.phrase >= 0 && !this.brokenPhrases.has(n.phrase)) col = SP_COLOR;
-          g.globalAlpha = live ? (n.holding ? 0.95 : 0.75) : 0.25;
-          g.fillStyle = live ? col : '#6b7280';
-          g.fill();
-          g.globalAlpha = 1;
-        }
-      }
-
-      // Objetivos en la línea de acierto
-      const rT = this.halfW * 0.16;
-      for (let l = 0; l < 5; l++) {
-        const x = this.laneX(l, 1);
-        const down = this.laneDown[l] > 0;
-        g.beginPath();
-        g.ellipse(x, this.hitY, rT, rT * 0.55, 0, 0, Math.PI * 2);
-        g.fillStyle = down ? GH.LANE_COLORS[l] : 'rgba(0,0,0,0.55)';
-        g.fill();
-        g.lineWidth = 4;
-        g.strokeStyle = GH.LANE_COLORS[l];
-        g.stroke();
-        g.beginPath();
-        g.ellipse(x, this.hitY, rT * 0.45, rT * 0.25, 0, 0, Math.PI * 2);
-        g.fillStyle = down ? '#fff' : 'rgba(255,255,255,0.15)';
-        g.fill();
-      }
-
-      // Gemas (de lejos a cerca)
-      for (let i = vis.length - 1; i >= 0; i--) {
-        const n = vis[i];
-        if (n.hit) continue;
-        const dt = n.time - t;
-        if (dt < -0.35) continue;
-        const p = this.proj(dt);
-        const sp = n.phrase >= 0 && !this.brokenPhrases.has(n.phrase);
-        g.globalAlpha = n.missed ? 0.35 : 1;
-        if (n.open) {
-          const w = this.halfW * 0.92 * p.s, h = rT * 0.32 * p.s;
-          g.fillStyle = sp ? SP_COLOR : OPEN_COLOR;
-          roundRect(g, this.cx - w, p.y - h, 2 * w, 2 * h, h);
-          g.fill();
-          if (n.hopo) { g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke(); }
-        } else {
-          for (const l of n.lanes) this.drawGem(g, this.laneX(l, p.s), p.y, rT * p.s, GH.LANE_COLORS[l], n, sp);
-        }
-        g.globalAlpha = 1;
-      }
-
-      // Efectos
-      this.effects = this.effects.filter((e) => now - e.t0 < 300);
-      for (const e of this.effects) {
-        const k = (now - e.t0) / 300;
-        if (e.type === 'hit') {
-          if (e.lane < 0) {
-            g.globalAlpha = 1 - k;
-            g.fillStyle = OPEN_COLOR;
-            g.fillRect(this.cx - this.halfW, this.hitY - 6 - 20 * k, this.halfW * 2, 12);
-          } else {
-            const x = this.laneX(e.lane, 1);
-            g.globalAlpha = 1 - k;
-            g.strokeStyle = GH.LANE_COLORS[e.lane];
-            g.lineWidth = 6 * (1 - k) + 1;
-            g.beginPath();
-            g.ellipse(x, this.hitY, rT * (1 + k * 1.2), rT * 0.55 * (1 + k * 1.2), 0, 0, Math.PI * 2);
-            g.stroke();
-            g.fillStyle = '#fff';
-            for (let j = 0; j < 6; j++) {
-              const ang = -Math.PI * (0.15 + 0.7 * (j / 5));
-              g.fillRect(x + Math.cos(ang) * rT * 2 * k, this.hitY + Math.sin(ang) * rT * 3 * k, 3, 3);
-            }
-          }
-          g.globalAlpha = 1;
-        }
-      }
-      // Fuego en sostenidos activos
-      for (const n of vis) {
-        if (!n.holding) continue;
-        const lanes = n.open ? [0, 1, 2, 3, 4] : n.lanes;
-        for (const l of lanes) {
-          const x = this.laneX(l, 1);
-          const fl = 0.6 + 0.4 * Math.sin(now / 40 + l);
-          g.fillStyle = 'rgba(255,200,80,' + (0.5 * fl) + ')';
-          g.beginPath();
-          g.ellipse(x, this.hitY - rT * 0.6, rT * 0.5, rT * (0.8 + 0.4 * fl), 0, 0, Math.PI * 2);
-          g.fill();
-        }
-      }
-
-      this.drawHUD(g, t, now);
+      this.rockShown += (this.rock - this.rockShown) * 0.12;
+      this.renderer.draw(t);
     }
-
-    drawGem(g, x, y, r, color, n, sp) {
-      const rx = r, ry = r * 0.55;
-      g.beginPath();
-      g.ellipse(x, y + ry * 0.25, rx, ry, 0, 0, Math.PI * 2);
-      g.fillStyle = 'rgba(0,0,0,0.5)';
-      g.fill();
-      g.beginPath();
-      g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-      g.fillStyle = n.tap ? '#111' : sp ? SP_COLOR : color;
-      g.fill();
-      g.lineWidth = Math.max(1.5, r * 0.14);
-      g.strokeStyle = n.tap ? (sp ? SP_COLOR : color) : '#f8fafc';
-      g.stroke();
-      if (n.tap) {
-        g.beginPath();
-        g.ellipse(x, y, rx * 0.55, ry * 0.55, 0, 0, Math.PI * 2);
-        g.fillStyle = sp ? SP_COLOR : color;
-        g.fill();
-      } else if (n.hopo) {
-        g.beginPath();
-        g.ellipse(x, y, rx * 0.5, ry * 0.5, 0, 0, Math.PI * 2);
-        g.fillStyle = '#fff';
-        g.fill();
-      } else {
-        g.beginPath();
-        g.ellipse(x, y - ry * 0.15, rx * 0.45, ry * 0.3, 0, 0, Math.PI * 2);
-        g.fillStyle = 'rgba(255,255,255,0.35)';
-        g.fill();
-      }
-    }
-
-    drawHUD(g, t, now) {
-      const W = this.W, H = this.H;
-      const fs = Math.max(14, Math.min(W, H) * 0.045);
-      g.textBaseline = 'top';
-      // Puntuación
-      g.font = '800 ' + Math.round(fs * 1.3) + 'px system-ui, sans-serif';
-      g.textAlign = 'right';
-      g.fillStyle = '#fff';
-      g.fillText(Math.round(this.score).toLocaleString('es'), W - 14, 14 + (this.safeTop || 0));
-      // Multiplicador y racha
-      const m = this.multiplier;
-      g.font = '800 ' + Math.round(fs * 1.1) + 'px system-ui, sans-serif';
-      g.fillStyle = this.spActive ? SP_COLOR : ['#fff', '#fff', '#fb923c', '#4ade80', '#c084fc'][Math.min(4, m)] || '#fde047';
-      g.fillText('x' + m, W - 14, 14 + fs * 1.6 + (this.safeTop || 0));
-      g.font = '600 ' + Math.round(fs * 0.8) + 'px system-ui, sans-serif';
-      g.fillStyle = '#cbd5e1';
-      g.fillText(this.combo + ' racha', W - 14, 14 + fs * 2.9 + (this.safeTop || 0));
-
-      // Barra de multiplicador (10 notas por nivel)
-      const step = this.combo >= 30 ? 10 : this.combo % 10;
-      const bx = this.cx - this.halfW, bw = this.halfW * 2, by = this.hitY + this.halfW * 0.16 * 0.55 + 16;
-      g.fillStyle = 'rgba(255,255,255,0.12)';
-      g.fillRect(bx, by, bw, 6);
-      g.fillStyle = '#fde047';
-      g.fillRect(bx, by, bw * (step / 10), 6);
-      // Poder estelar
-      g.fillStyle = 'rgba(255,255,255,0.12)';
-      g.fillRect(bx, by + 10, bw, 6);
-      g.fillStyle = SP_COLOR;
-      g.fillRect(bx, by + 10, bw * this.energy, 6);
-      g.fillStyle = 'rgba(255,255,255,0.6)';
-      g.fillRect(bx + bw / 2 - 1, by + 9, 2, 8);
-      // Progreso
-      const prog = Math.max(0, Math.min(1, t / this.endTime));
-      g.fillStyle = 'rgba(255,255,255,0.15)';
-      g.fillRect(0, H - 4, W, 4);
-      g.fillStyle = '#a78bfa';
-      g.fillRect(0, H - 4, W * prog, 4);
-
-      // Cuenta atrás
-      if (t < 0) {
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        g.font = '800 ' + Math.round(fs * 3) + 'px system-ui, sans-serif';
-        g.fillStyle = 'rgba(255,255,255,0.9)';
-        g.fillText(String(Math.ceil(-t)), this.cx, H * 0.45);
-      }
-      // Sección
-      if (this.sectionIdx >= 0 && now - this.sectionShownAt < 2500) {
-        const a = Math.min(1, (2500 - (now - this.sectionShownAt)) / 500);
-        g.globalAlpha = a;
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        g.font = '700 ' + Math.round(fs) + 'px system-ui, sans-serif';
-        g.fillStyle = '#e9d5ff';
-        g.fillText(this.play.sections[this.sectionIdx].name, this.cx, this.topY + fs);
-        g.globalAlpha = 1;
-      }
-      // Mensajes
-      this.messages = this.messages.filter((m2) => now - m2.t0 < 1500);
-      this.messages.forEach((m2, i) => {
-        const k = (now - m2.t0) / 1500;
-        g.globalAlpha = 1 - k * k;
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        g.font = '800 ' + Math.round(fs * 1.2) + 'px system-ui, sans-serif';
-        g.fillStyle = m2.color;
-        g.fillText(m2.text, this.cx, H * 0.38 - i * fs * 1.6 - k * 30);
-        g.globalAlpha = 1;
-      });
-    }
-  }
-
-  function roundRect(g, x, y, w, h, r) {
-    g.beginPath();
-    g.moveTo(x + r, y);
-    g.arcTo(x + w, y, x + w, y + h, r);
-    g.arcTo(x + w, y + h, x, y + h, r);
-    g.arcTo(x, y + h, x, y, r);
-    g.arcTo(x, y, x + w, y, r);
-    g.closePath();
   }
 
   GH.Game = Game;
