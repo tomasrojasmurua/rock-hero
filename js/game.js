@@ -17,6 +17,7 @@
       this.onEnd = opts.onEnd;
       this.onPauseRequest = opts.onPauseRequest;
       this.audioDelay = opts.audioDelay || 0;
+      this.stage3d = opts.stage3d || null;
       this.win = (this.settings.windowMs || 90) / 1000;
       this.look = 1.6 / (this.settings.noteSpeed || 1);
       this.reset();
@@ -77,6 +78,7 @@
     pause() {
       if (this.paused || this.finished) return;
       this.paused = true;
+      this.pausedAt = this.audio.songTime();
       this.audio.pause();
       this.pointers.clear();
       this.laneDown = [0, 0, 0, 0, 0];
@@ -321,12 +323,13 @@
       const portrait = this.H >= this.W;
       this.cx = this.W / 2;
       this.hitY = this.H * (portrait ? 0.85 : 0.84);
-      this.topY = this.H * (portrait ? 0.27 : 0.2);
+      this.topY = this.H * (portrait ? (this.stage3d ? 0.36 : 0.27) : (this.stage3d ? 0.27 : 0.2));
       this.halfW = Math.min(this.W * 0.44, this.H * (portrait ? 0.4 : 0.5));
       this.farS = 0.2;
       this.horizonY = (this.topY - this.farS * this.hitY) / (1 - this.farS);
       if (!this.renderer) this.renderer = new GH.Renderer(this);
       this.renderer.resize(dpr);
+      if (this.stage3d) this.stage3d.resize(this.W, this.H, this);
     }
 
     proj(dt) {
@@ -341,6 +344,7 @@
 
     draw(t) {
       this.rockShown += (this.rock - this.rockShown) * 0.12;
+      if (this.stage3d) this.stage3d.update(this.paused ? this.pausedAt : t, this);
       this.renderer.draw(t);
     }
   }

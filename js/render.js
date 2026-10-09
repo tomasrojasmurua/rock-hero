@@ -379,7 +379,8 @@
       const bl = gm.tm.beatLines(t - 0.25, t + 0.01);
       for (const b of bl) if (b.measure && t >= b.time) pulse = Math.max(pulse, 1 - (t - b.time) / 0.25);
       const intensity = Math.min(1, (gm.multiplier - 1) / 3 + (gm.spActive ? 0.5 : 0));
-      this.stage.draw(g, now, intensity, gm.spActive, pulse);
+      if (gm.stage3d) g.clearRect(0, 0, W, H);
+      else this.stage.draw(g, now, intensity, gm.spActive, pulse);
 
       g.drawImage(this.highway, 0, 0, W, H);
       const near = this.near, far = this.far;

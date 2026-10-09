@@ -181,12 +181,72 @@
     }
   }
 
-  function enterGame(playable) {
+  let bandDirty = true;
+  async function prepareStage3D() {
+    const c3 = $('canvas3d');
+    if (!settings.stage3d || !GH.Stage3D) { c3.hidden = true; return null; }
+    try {
+      const st = GH.Stage3D.get(c3);
+      if (bandDirty) {
+        const rec = await GH.store.allBandModels().catch(() => ({}));
+        const models = {};
+        for (const [role, v] of Object.entries(rec)) models[role] = await v.blob.arrayBuffer();
+        await st.setBand(models);
+        bandDirty = false;
+      }
+      c3.hidden = false;
+      return st;
+    } catch (e) {
+      console.warn('Escenario 3D no disponible', e);
+      c3.hidden = true;
+      return null;
+    }
+  }
+
+  async function renderBandList() {
+    const ul = $('band-list');
+    const rec = await GH.store.allBandModels().catch(() => ({}));
+    ul.innerHTML = '';
+    for (const r of GH.BAND_ROLES) {
+      const li = document.createElement('li');
+      const has = rec[r.id];
+      li.innerHTML = '<div class="who"><b>' + esc(r.member) + '</b><span>' + esc(r.label) + ' · ' +
+        esc(has ? has.name : 'músico provisional') + '</span></div>';
+      const load = document.createElement('label');
+      load.className = 'btn';
+      load.textContent = has ? 'Cambiar' : 'Cargar .glb';
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = '.glb,model/gltf-binary'; input.hidden = true;
+      input.onchange = async () => {
+        const f = input.files[0];
+        if (!f) return;
+        try {
+          await GH.store.putBandModel(r.id, f);
+          bandDirty = true;
+          toast('Modelo de ' + r.member + ' guardado.');
+        } catch (e) { toast('No se pudo guardar el modelo: ' + (e.message || e)); }
+        renderBandList();
+      };
+      load.appendChild(input);
+      li.appendChild(load);
+      if (has) {
+        const del = document.createElement('button');
+        del.className = 'btn';
+        del.textContent = 'Quitar';
+        del.onclick = async () => { await GH.store.deleteBandModel(r.id); bandDirty = true; renderBandList(); };
+        li.appendChild(del);
+      }
+      ul.appendChild(li);
+    }
+  }
+
+  async function enterGame(playable) {
     screen('game');
     goFullscreen();
     if (game) game.destroy();
+    const stage3d = await prepareStage3D();
     game = new GH.Game({
-      canvas: $('canvas'), audio, settings, playable,
+      canvas: $('canvas'), audio, settings, playable, stage3d,
       onEnd: finish,
       onPauseRequest: () => (game.paused ? resumeGame() : pauseGame()),
     });
@@ -298,7 +358,7 @@
         if (key === 'volume') audio.setVolume(settings.volume);
       };
     }
-    for (const [id, key] of [['s-lefty', 'lefty'], ['s-miss', 'missSound'], ['s-vibrate', 'vibrate']]) {
+    for (const [id, key] of [['s-lefty', 'lefty'], ['s-miss', 'missSound'], ['s-vibrate', 'vibrate'], ['s-stage3d', 'stage3d']]) {
       $(id).checked = !!settings[key];
       $(id).onchange = () => { settings[key] = $(id).checked; GH.settings.save(settings); };
     }
@@ -384,7 +444,7 @@
     $('p-quit').onclick = quitGame;
     $('r-again').onclick = () => { hide('results'); audio.unlock(); enterGame(game.play); };
     $('r-menu').onclick = quitGame;
-    $('btn-settings').onclick = () => { bindSettings(); show('settings'); };
+    $('btn-settings').onclick = () => { bindSettings(); renderBandList(); show('settings'); };
     $('s-close').onclick = () => hide('settings');
     $('s-calibrate').onclick = startCalibration;
     $('calib-pad').addEventListener('pointerdown', calibTap);

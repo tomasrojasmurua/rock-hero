@@ -38,6 +38,7 @@
 
   <!-- Juego -->
   <section id="game" class="screen">
+    <canvas id="canvas3d"></canvas>
     <canvas id="canvas"></canvas>
     <button id="btn-pause" class="hud-btn" aria-label="Pausa">❚❚</button>
     <button id="btn-sp" class="hud-btn sp" aria-label="Poder estelar">⚡</button>
@@ -114,6 +115,10 @@
       <label class="check"><input id="s-lefty" type="checkbox"> Modo zurdo (carriles invertidos)</label>
       <label class="check"><input id="s-miss" type="checkbox"> Sonido al fallar</label>
       <label class="check"><input id="s-vibrate" type="checkbox"> Vibrar al fallar</label>
+      <h3>Banda en 3D</h3>
+      <label class="check"><input id="s-stage3d" type="checkbox"> Mostrar escenario 3D con la banda</label>
+      <p class="muted small">Puedes cambiar cada músico provisional por un modelo 3D (.glb, idealmente con su animación incluida). Se guarda solo en este teléfono.</p>
+      <ul id="band-list" class="band-list"></ul>
       <p class="muted small">Si usas auriculares Bluetooth, calibra: suelen tener 150–300 ms de retraso. Con teclado físico: A S D F G (o 1–5) y espacio para el poder estelar.</p>
       <button id="s-close" class="btn primary wide">Listo</button>
     </div>
@@ -146,5 +151,9 @@
   <script src="js/game.js"></script>
   <script src="js/sample.js"></script>
   <script src="js/app.js"></script>
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
+  </script>
+  <script type="module" src="js/stage3d.js"></script>
 </body>
 </html>

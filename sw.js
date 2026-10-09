@@ -1,10 +1,11 @@
 // Service worker: guarda la app para jugar sin conexión.
-const CACHE = 'trastes-v2';
+const CACHE = 'trastes-v3';
 const ASSETS = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   'js/core.js', 'js/chart-parser.js', 'js/midi-parser.js', 'js/importer.js',
-  'js/storage.js', 'js/audio.js', 'js/render.js', 'js/game.js', 'js/sample.js', 'js/app.js',
+  'js/storage.js', 'js/audio.js', 'js/render.js', 'js/game.js', 'js/stage3d.js',
+  'vendor/three/three.module.min.js', 'vendor/three/addons/loaders/GLTFLoader.js', 'vendor/three/addons/utils/BufferGeometryUtils.js', 'js/sample.js', 'js/app.js',
 ];
 
 self.addEventListener('install', (e) => {

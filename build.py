@@ -8,6 +8,11 @@ html = re.sub(r'\s*<link rel="(manifest|icon|apple-touch-icon)"[^>]*>', '', html
 def inline(m):
     return '<script>\n' + (root / m.group(1)).read_text() + '</script>'
 html = re.sub(r'<script src="(js/[\w-]+\.js)"></script>', inline, html)
+# Three.js desde CDN en la versión de un solo archivo
+html = html.replace('./vendor/three/three.module.min.js', 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js')
+html = html.replace('./vendor/three/addons/', 'https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/')
+html = re.sub(r'<script type="module" src="(js/[\w-]+\.js)"></script>',
+              lambda m: '<script type="module">\n' + (root / m.group(1)).read_text() + '</script>', html)
 (root / 'dist').mkdir(exist_ok=True)
 (root / 'dist' / 'trastes.html').write_text(html)
 print('dist/trastes.html', len(html), 'bytes')

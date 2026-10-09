@@ -6,12 +6,12 @@
   function db() {
     if (dbp) return dbp;
     dbp = new Promise((resolve, reject) => {
-      const req = indexedDB.open('guitar-hero-pwa', 1);
+      const req = indexedDB.open('guitar-hero-pwa', 2);
       req.onupgradeneeded = () => {
         const d = req.result;
-        d.createObjectStore('songs', { keyPath: 'id' });
-        d.createObjectStore('files', { keyPath: 'id' });
-        d.createObjectStore('scores');
+        for (const [name, opts] of [['songs', { keyPath: 'id' }], ['files', { keyPath: 'id' }], ['scores'], ['band']]) {
+          if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, opts);
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -61,6 +61,19 @@
     putScore(key, value) {
       return tx('scores', 'readwrite', (t) => { t.objectStore('scores').put(value, key); });
     },
+    // Modelos 3D de la banda: rol -> {name, blob}
+    async putBandModel(role, file) {
+      const blob = new Blob([await file.arrayBuffer()], { type: 'model/gltf-binary' });
+      await tx('band', 'readwrite', (t) => { t.objectStore('band').put({ name: file.name, blob }, role); });
+    },
+    deleteBandModel(role) {
+      return tx('band', 'readwrite', (t) => { t.objectStore('band').delete(role); });
+    },
+    allBandModels() {
+      return tx('band', 'readonly', (t) => Promise.all([
+        req2p(t.objectStore('band').getAllKeys()), req2p(t.objectStore('band').getAll()),
+      ])).then(([k, v]) => { const o = {}; k.forEach((key, i) => (o[key] = v[i])); return o; });
+    },
     allScores() {
       return tx('scores', 'readonly', (t) => Promise.all([
         req2p(t.objectStore('scores').getAllKeys()), req2p(t.objectStore('scores').getAll()),
@@ -68,7 +81,7 @@
     },
   };
 
-  const DEFAULTS = { noteSpeed: 1, offsetMs: 0, windowMs: 90, lefty: false, vibrate: true, volume: 0.9, missSound: true };
+  const DEFAULTS = { stage3d: true, noteSpeed: 1, offsetMs: 0, windowMs: 90, lefty: false, vibrate: true, volume: 0.9, missSound: true };
   GH.settings = {
     load() {
       try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('gh-settings') || '{}')); }

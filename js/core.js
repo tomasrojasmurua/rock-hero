@@ -16,6 +16,15 @@
   GH.DIFFS = ['expert', 'hard', 'medium', 'easy'];
   GH.DIFF_LABELS = { expert: 'Experto', hard: 'Difícil', medium: 'Medio', easy: 'Fácil' };
 
+  // Puestos de la banda en el escenario 3D
+  GH.BAND_ROLES = [
+    { id: 'vocals', label: 'Voz', member: 'Julian Casablancas' },
+    { id: 'lead', label: 'Guitarra solista', member: 'Nick Valensi' },
+    { id: 'rhythm', label: 'Guitarra rítmica', member: 'Albert Hammond Jr.' },
+    { id: 'bass', label: 'Bajo', member: 'Nikolai Fraiture' },
+    { id: 'drums', label: 'Batería', member: 'Fabrizio Moretti' },
+  ];
+
   GH.stripTags = (s) => String(s == null ? '' : s).replace(/<[^>]*>/g, '').trim();
 
   class TempoMap {
