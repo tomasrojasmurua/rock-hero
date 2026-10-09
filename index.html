@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0b0820">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="Juego de ritmo táctil de 5 carriles compatible con canciones de Clone Hero.">
+  <title>Trastes</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Biblioteca -->
+  <section id="menu" class="screen active">
+    <header class="top">
+      <h1><span class="logo">🎸</span> Trastes</h1>
+      <button id="btn-settings" class="icon-btn" aria-label="Ajustes">⚙️</button>
+    </header>
+    <div class="import-bar">
+      <label class="btn primary" id="lbl-folder">📁 Importar carpeta
+        <input id="in-folder" type="file" webkitdirectory directory multiple hidden>
+      </label>
+      <label class="btn">📦 Archivos / .zip / .sng
+        <input id="in-files" type="file" multiple hidden
+          accept=".zip,.sng,.chart,.mid,.midi,.ini,.ogg,.opus,.mp3,.wav,.m4a,.png,.jpg,.jpeg,application/zip,audio/*">
+      </label>
+    </div>
+    <p class="hint" id="import-hint">Importa canciones de Clone Hero: una carpeta con <b>notes.chart</b> o <b>notes.mid</b> y su audio (song.ogg, .opus, .mp3…), un <b>.zip</b> con una o varias carpetas, o archivos <b>.sng</b>.</p>
+    <input id="search" type="search" placeholder="Buscar canción o artista" autocomplete="off">
+    <ul id="song-list"></ul>
+    <p class="foot" id="storage-info"></p>
+  </section>
+
+  <!-- Juego -->
+  <section id="game" class="screen">
+    <canvas id="canvas"></canvas>
+    <button id="btn-pause" class="hud-btn" aria-label="Pausa">❚❚</button>
+    <button id="btn-sp" class="hud-btn sp" aria-label="Poder estelar">⚡</button>
+  </section>
+
+  <!-- Detalle de canción -->
+  <div id="detail" class="sheet" hidden>
+    <div class="sheet-card">
+      <div class="detail-head">
+        <div id="d-cover" class="cover big"></div>
+        <div>
+          <h2 id="d-name"></h2>
+          <p id="d-artist" class="muted"></p>
+          <p id="d-charter" class="muted small"></p>
+        </div>
+      </div>
+      <h3>Instrumento</h3>
+      <div id="d-inst" class="chips"></div>
+      <h3>Dificultad</h3>
+      <div id="d-diff" class="chips"></div>
+      <p id="d-best" class="muted small"></p>
+      <div class="row">
+        <button id="d-delete" class="btn danger">Eliminar</button>
+        <button id="d-close" class="btn">Cerrar</button>
+        <button id="d-play" class="btn primary grow">▶ Jugar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pausa -->
+  <div id="pause" class="sheet" hidden>
+    <div class="sheet-card center">
+      <h2>Pausa</h2>
+      <button id="p-resume" class="btn primary wide">Continuar</button>
+      <button id="p-restart" class="btn wide">Reiniciar</button>
+      <button id="p-quit" class="btn wide">Salir</button>
+    </div>
+  </div>
+
+  <!-- Resultados -->
+  <div id="results" class="sheet" hidden>
+    <div class="sheet-card center">
+      <h2 id="r-title">¡Canción completada!</h2>
+      <div id="r-stars" class="stars"></div>
+      <div id="r-score" class="big-score"></div>
+      <p id="r-best" class="muted small"></p>
+      <div class="stats">
+        <div><b id="r-acc"></b><span>aciertos</span></div>
+        <div><b id="r-notes"></b><span>notas</span></div>
+        <div><b id="r-combo"></b><span>mejor racha</span></div>
+      </div>
+      <button id="r-again" class="btn primary wide">Otra vez</button>
+      <button id="r-menu" class="btn wide">Biblioteca</button>
+    </div>
+  </div>
+
+  <!-- Ajustes -->
+  <div id="settings" class="sheet" hidden>
+    <div class="sheet-card">
+      <h2>Ajustes</h2>
+      <label class="field">Velocidad de notas <output id="o-speed"></output>
+        <input id="s-speed" type="range" min="0.5" max="2.5" step="0.1">
+      </label>
+      <label class="field">Calibración de audio (ms) <output id="o-offset"></output>
+        <input id="s-offset" type="range" min="-300" max="500" step="5">
+      </label>
+      <button id="s-calibrate" class="btn wide">🎧 Calibrar tocando al ritmo</button>
+      <label class="field">Ventana de acierto (ms) <output id="o-window"></output>
+        <input id="s-window" type="range" min="50" max="160" step="5">
+      </label>
+      <label class="field">Volumen <output id="o-volume"></output>
+        <input id="s-volume" type="range" min="0" max="1" step="0.05">
+      </label>
+      <label class="check"><input id="s-lefty" type="checkbox"> Modo zurdo (carriles invertidos)</label>
+      <label class="check"><input id="s-miss" type="checkbox"> Sonido al fallar</label>
+      <label class="check"><input id="s-vibrate" type="checkbox"> Vibrar al fallar</label>
+      <p class="muted small">Si usas auriculares Bluetooth, calibra: suelen tener 150–300 ms de retraso. Con teclado físico: A S D F G (o 1–5) y espacio para el poder estelar.</p>
+      <button id="s-close" class="btn primary wide">Listo</button>
+    </div>
+  </div>
+
+  <!-- Calibración -->
+  <div id="calib" class="sheet" hidden>
+    <div class="sheet-card center" id="calib-pad">
+      <h2>Calibración</h2>
+      <p id="calib-msg">Toca en cualquier parte de este recuadro al ritmo de los clics.</p>
+      <div id="calib-beat" class="beat-dot"></div>
+      <button id="calib-cancel" class="btn wide">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Carga -->
+  <div id="loading" class="sheet" hidden>
+    <div class="sheet-card center"><div class="spinner"></div><p id="loading-msg">Cargando…</p></div>
+  </div>
+
+  <div id="toast" hidden></div>
+
+  <script src="js/core.js"></script>
+  <script src="js/chart-parser.js"></script>
+  <script src="js/midi-parser.js"></script>
+  <script src="js/importer.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/sample.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
