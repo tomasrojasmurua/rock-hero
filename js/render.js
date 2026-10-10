@@ -514,6 +514,7 @@
       gm.effects = gm.effects.filter((e) => now - e.t0 < 320);
       for (const e of gm.effects) {
         if (e.type !== 'hit') continue;
+        if (!e.sparked) { e.sparked = true; this.spawnSparks(e.lane, rT); }
         const k = (now - e.t0) / 320;
         const lanes = e.lane < 0 ? [0, 1, 2, 3, 4] : [e.lane];
         for (const l of lanes) {
@@ -540,9 +541,51 @@
           g.drawImage(S.glows[l], x - gs / 2, gm.hitY - gs / 2, gs, gs);
         }
       }
+      this.drawSparks(g, now);
       g.restore();
 
       this.drawHUD(g, t, now);
+    }
+
+    // chispas que saltan del objetivo al acertar; más con mayor multiplicador, celestes con poder estelar
+    spawnSparks(lane, rT) {
+      const gm = this.game;
+      const sparks = (this.sparks = this.sparks || []);
+      const lanes = lane < 0 ? [0, 1, 2, 3, 4] : [lane];
+      const count = (lane < 0 ? 4 : 8) + gm.multiplier * 2;
+      for (const l of lanes) {
+        const col = gm.spActive ? SP : lane < 0 ? OPEN : GH.LANE_COLORS[l];
+        const x = gm.laneX(l, 1);
+        for (let i = 0; i < count && sparks.length < 300; i++) {
+          const a = -PI / 2 + (Math.random() - 0.5) * PI * 0.9;
+          const v = rT * (6 + Math.random() * 10);
+          sparks.push({ x: x + (Math.random() - 0.5) * rT, y: gm.hitY, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+            life: 0.35 + Math.random() * 0.3, age: 0, r: rT * (0.05 + Math.random() * 0.07), col });
+        }
+      }
+    }
+
+    drawSparks(g, now) {
+      const sparks = this.sparks;
+      const dt = Math.min(0.05, (now - (this.sparkT || now)) / 1000);
+      this.sparkT = now;
+      if (!sparks || !sparks.length) return;
+      const grav = this.game.halfW * 2.2;
+      let j = 0;
+      for (const p of sparks) {
+        p.age += dt;
+        if (p.age >= p.life) continue;
+        p.vy += grav * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+        const k = 1 - p.age / p.life;
+        g.globalAlpha = k;
+        g.strokeStyle = p.col; g.lineWidth = p.r * 2; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03); g.stroke();
+        g.fillStyle = '#ffffff';
+        g.beginPath(); g.arc(p.x, p.y, p.r * 0.7, 0, PI * 2); g.fill();
+        sparks[j++] = p;
+      }
+      sparks.length = j;
+      g.globalAlpha = 1;
     }
 
     drawHUD(g, t, now) {
