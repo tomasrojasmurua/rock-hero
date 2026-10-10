@@ -101,6 +101,13 @@
       this._pd = (e) => {
         e.preventDefault();
         if (this.paused) return;
+        // Franja superior (botones de pausa y poder estelar): nunca cuenta como nota; un toque cerca de la
+        // esquina del botón de pausa pausa el juego aunque el dedo caiga un poco fuera del círculo.
+        const sx = (this.safeInsetLeft || 0) + 84, sy = (this.safeTop || 0) + 140;
+        if (e.clientX < sx && e.clientY < sy) {
+          if (e.clientY < (this.safeTop || 0) + 76 && this.onPauseRequest) this.onPauseRequest();
+          return;
+        }
         const lane = this.laneAt(e.clientX);
         this.pointers.set(e.pointerId, lane);
         try { c.setPointerCapture(e.pointerId); } catch (err) { /* sin captura */ }

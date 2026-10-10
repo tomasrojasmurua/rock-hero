@@ -317,22 +317,29 @@
   function pauseGame() {
     if (!game || game.finished) return;
     game.pause();
+    pausedAt = performance.now();
     show('pause');
   }
+  let pausedAt = 0;
+  // Ignora toques en los botones de la pausa justo después de abrirla (evita pulsaciones fantasma).
+  const pauseGuard = (fn) => (e) => { if (performance.now() - pausedAt < 350) return; fn(e); };
   function resumeGame() {
     hide('pause');
     if (game) game.resume();
   }
   function quitGame() {
     hide('pause'); hide('results');
-    if (mp.inRound) {
-      if (game && !game.finished) room.send({ t: 'final', id: room.myId, score: Math.round(game.score), quit: true });
-      endRound();
-      if (room) { if (game) { game.destroy(); game = null; } releaseWakeLock(); exitFullscreen(); screen('menu'); refresh(); showRoom(); return; }
-    }
-    if (game) { game.destroy(); game = null; }
-    releaseWakeLock();
-    exitFullscreen();
+    const g = game, wasRound = mp.inRound;
+    try { audio.stop(); } catch (e) { /* nada */ }
+    try {
+      if (mp.inRound) {
+        if (g && !g.finished) room.send({ t: 'final', id: room.myId, score: Math.round(g.score), quit: true });
+        endRound();
+      }
+    } catch (e) { console.error(e); }
+    try { if (g) { g.destroy(); game = null; } } catch (e) { console.error(e); game = null; }
+    try { releaseWakeLock(); exitFullscreen(); } catch (e) { /* nada */ }
+    if (room && wasRound) { screen('menu'); refresh(); showRoom(); return; }
     screen('menu');
     refresh();
   }
@@ -882,9 +889,9 @@
       b.onclick = pauseGame;
     }
     $('btn-sp').onclick = () => game && game.activateSP();
-    $('p-resume').onclick = resumeGame;
-    $('p-restart').onclick = () => { hide('pause'); game.paused = false; audio.resume().then(() => game.restart()); };
-    $('p-quit').onclick = quitGame;
+    $('p-resume').onclick = pauseGuard(resumeGame);
+    $('p-restart').onclick = pauseGuard(() => { hide('pause'); game.paused = false; audio.resume().then(() => game.restart()); });
+    $('p-quit').onclick = pauseGuard(quitGame);
     $('r-again').onclick = () => { hide('results'); audio.unlock(); enterGame(game.play); };
     $('r-menu').onclick = quitGame;
     bindRoom();
