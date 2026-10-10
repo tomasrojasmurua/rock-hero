@@ -927,7 +927,7 @@
     }
     $('btn-sp').onclick = () => game && game.activateSP();
     $('p-resume').onclick = pauseGuard(resumeGame);
-    $('p-restart').onclick = pauseGuard(() => { if (performance.now() < startLockUntil) return; hide('pause'); game.paused = false; audio.resume().then(() => game.restart()); });
+    $('p-restart').onclick = pauseGuard(() => { if (performance.now() < startLockUntil) return; hide('pause'); audio.resume().then(() => game.restart()); });
     $('p-quit').onclick = pauseGuard(quitGame);
     $('r-again').onclick = () => { hide('results'); audio.unlock(); enterGame(game.play); };
     $('r-menu').onclick = quitGame;

@@ -118,6 +118,13 @@
       this.anchorCtx = null;
     }
 
+    // Reanuda tras una pausa: vuelve a programar las pistas para que la canción siga exactamente en `songT`.
+    startAt(songT, audioDelay) {
+      const ctx = this.ctx;
+      // songTime = (lo que suena ahora) - startCtx - offset, y lo que suena va `latencia` por detrás de currentTime.
+      this.start(0, audioDelay, songT + this.offset + (ctx.outputLatency || ctx.baseLatency || 0));
+    }
+
     stop() {
       for (const s of this.sources) { try { s.stop(); } catch (e) { /* ya parado */ } s.disconnect(); }
       this.sources = [];
@@ -137,7 +144,9 @@
       const ctx = this.ctx;
       if (ctx.getOutputTimestamp) {
         const ts = ctx.getOutputTimestamp();
-        if (ts && ts.contextTime > 0 && ts.performanceTime > 0) return ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
+        // Con el contexto suspendido (o recién reanudado) la marca queda vieja y seguiría avanzando con
+        // performance.now(): nunca puede ir por delante de currentTime.
+        if (ts && ts.contextTime > 0 && ts.performanceTime > 0) return Math.min(ctx.currentTime, ts.contextTime + (performance.now() - ts.performanceTime) / 1000);
       }
       return ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0);
     }

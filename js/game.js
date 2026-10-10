@@ -19,6 +19,8 @@
       this.audioDelay = opts.audioDelay || 0;
       this.stage3d = opts.stage3d || null;
       this.win = (this.settings.windowMs || 90) / 1000;
+      this._pauseTotal = 0; // ms que el juego pasó en pausa (no cuentan para las animaciones)
+      this._pausedPerf = 0;
       this.look = 1.6 / (this.settings.noteSpeed || 1);
       this.reset();
 
@@ -46,7 +48,9 @@
       this.messages = [];
       this.lastTick = null;
       this.finished = false;
+      if (this.paused) this._pauseTotal += performance.now() - this._pausedPerf;
       this.paused = false;
+      this.resuming = false;
       this.leadMuted = false;
       const last = this.notes.length ? Math.max(...this.notes.map((n) => n.endTime)) : 0;
       this.lastNoteEnd = last;
@@ -75,18 +79,34 @@
       this._unbind();
     }
 
+    // Reloj de las animaciones (ms): igual que performance.now() pero detenido mientras el juego está en pausa.
+    now() { return (this.paused ? this._pausedPerf : performance.now()) - this._pauseTotal; }
+
+    // En pausa se congela todo: se paran las pistas y el reloj de la canción queda fijo en `pausedAt`.
     pause() {
       if (this.paused || this.finished) return;
-      this.paused = true;
+      this.audio.tick();
       this.pausedAt = this.audio.songTime();
+      this._pausedPerf = performance.now();
+      this.paused = true;
+      this.resuming = false;
+      this.audio.stop();
       this.audio.pause();
       this.pointers.clear();
       this.laneDown = [0, 0, 0, 0, 0];
     }
     resume() {
-      if (!this.paused) return;
-      this.paused = false;
-      this.audio.resume();
+      if (!this.paused || this.resuming) return;
+      this.resuming = true;
+      // Se espera a que el contexto de audio vuelva a correr antes de reprogramar las pistas desde `pausedAt`.
+      Promise.resolve(this.audio.resume()).catch(() => {}).then(() => {
+        if (!this.resuming || !this.paused || !this.running) return;
+        this.resuming = false;
+        this.audio.startAt(this.pausedAt, this.audioDelay);
+        if (this.leadMuted) this.audio.setLeadMuted(true);
+        this._pauseTotal += performance.now() - this._pausedPerf;
+        this.paused = false;
+      });
     }
 
     restart() {
@@ -180,7 +200,7 @@
     press(lane, t, slide) {
       this.laneDown[lane]++;
       this.laneDownAt[lane] = t;
-      this.effects.push({ type: 'press', lane, t0: performance.now() });
+      this.effects.push({ type: 'press', lane, t0: this.now() });
       const W = this.win;
       let best = null;
       for (let i = this.idx; i < this.notes.length; i++) {
@@ -214,7 +234,7 @@
       this.rock = Math.min(1, this.rock + 0.025);
       if (n.len > 0) n.holding = true;
       if (this.leadMuted) { this.leadMuted = false; this.audio.setLeadMuted(false); }
-      const now = performance.now();
+      const now = this.now();
       if (n.open) this.effects.push({ type: 'hit', lane: -1, t0: now, sp: n.phrase >= 0 });
       else for (const l of n.lanes) this.effects.push({ type: 'hit', lane: l, t0: now });
       if (n.phraseEnd && !this.brokenPhrases.has(n.phrase)) {
@@ -244,7 +264,7 @@
       this.message('¡PODER ESTELAR!', SP_COLOR);
     }
 
-    message(text, color) { this.messages.push({ text, color, t0: performance.now() }); }
+    message(text, color) { this.messages.push({ text, color, t0: this.now() }); }
 
     // ---------------- lógica por cuadro ----------------
     update(t) {
@@ -287,7 +307,7 @@
       const secs = this.play.sections;
       while (this.sectionIdx + 1 < secs.length && secs[this.sectionIdx + 1].time <= t) {
         this.sectionIdx++;
-        this.sectionShownAt = performance.now();
+        this.sectionShownAt = this.now();
       }
       if (!this.finished && t > this.endTime) {
         this.finished = true;
@@ -314,7 +334,7 @@
       if (!this.running) return;
       this.raf = requestAnimationFrame(this._frame);
       this.audio.tick();
-      const t = this.audio.songTime();
+      const t = this.paused ? this.pausedAt : this.audio.songTime();
       if (!this.paused) this.update(t);
       if (this.running || this.finished) this.draw(t);
     }
@@ -351,7 +371,7 @@
 
     draw(t) {
       this.rockShown += (this.rock - this.rockShown) * 0.12;
-      if (this.stage3d) this.stage3d.update(this.paused ? this.pausedAt : t, this);
+      if (this.stage3d) this.stage3d.update(t, this);
       this.renderer.draw(t);
     }
   }

@@ -200,7 +200,6 @@ class Stage3D {
     this.scene.background = new THREE.Color(0x0a0618);
     this.scene.fog = new THREE.Fog(0x0a0618, 14, 34);
     this.camera = new THREE.PerspectiveCamera(36, 1, 0.1, 80);
-    this.clock = new THREE.Clock();
     this.models = {}; // rol -> {scene, animations} importado
     this.parsed = {}; // rol -> gltf ya decodificado
     this.buildStage();
@@ -463,8 +462,10 @@ class Stage3D {
   }
 
   update(t, game) {
-    const dt = Math.min(0.05, this.clock.getDelta());
-    const now = performance.now() / 1000;
+    // Reloj del juego: en pausa no avanza, así que la banda, las luces y el público se quedan quietos.
+    const now = game.now() / 1000;
+    const dt = this._last == null ? 0 : Math.min(0.05, Math.max(0, now - this._last));
+    this._last = now;
     const tm = game.tm;
     const beats = t > 0 ? tm.timeToTick(t) / tm.res : now * 2;
     const playing = t > 0 && t < game.lastNoteEnd + 1;
