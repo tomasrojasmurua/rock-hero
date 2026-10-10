@@ -155,41 +155,53 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 .band-list .who span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .band-list .btn { min-height: 36px; padding: 6px 12px; font-size: 13px; }
 
-/* ---------- Menú principal (póster sobre pared de ladrillo) ---------- */
-#home {
-  background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 35%, rgba(0,0,0,.75) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='56'%3E%3Crect width='64' height='56' fill='%23120807'/%3E%3Crect x='1' y='1' width='62' height='26' fill='%23552017'/%3E%3Crect x='-30' y='29' width='61' height='26' fill='%23642a1c'/%3E%3Crect x='33' y='29' width='62' height='26' fill='%234a1a14'/%3E%3C/svg%3E");
-  overflow-y: auto; padding: calc(20px + var(--safe-top)) 16px calc(20px + var(--safe-bottom));
+/* ---------- Menú principal (estilo Guitar Hero III) ---------- */
+#home { background: #1c100a; overflow: hidden; }
+#home.active { display: block; }
+.home-art { position: absolute; inset: 0; width: 100%; height: 100%; }
+.home-shade { position: absolute; inset: 0; background: radial-gradient(ellipse at 70% 50%, rgba(0,0,0,.35), rgba(0,0,0,.75) 100%); pointer-events: none; }
+.home-logo {
+  position: absolute; left: 4vw; top: calc(4vh + var(--safe-top)); display: flex; flex-direction: column; align-items: flex-start;
+  transform: rotate(-3deg); filter: drop-shadow(3px 4px 0 rgba(0,0,0,.7));
 }
-#home.active { display: flex; align-items: center; justify-content: center; }
-.poster {
-  position: relative; width: min(100%, 440px); margin: auto; padding: 26px 20px 20px; transform: rotate(-1deg);
-  background: radial-gradient(circle at 30% 20%, #f4ecd3, #ddd1ad 70%, #c9bb92);
-  box-shadow: 0 14px 40px rgba(0,0,0,.7), inset 0 0 40px rgba(120,90,40,.35); color: #1a1209;
+.hl-top {
+  font: 900 clamp(44px, 15vw, 96px)/.95 Impact, "Arial Black", "Haettenschweiler", sans-serif; letter-spacing: 3px; text-transform: uppercase;
+  background: linear-gradient(180deg, #f4f4f6 0%, #b4b8c2 45%, #6d7280 55%, #d3d6de 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-stroke: 2px #20232b; paint-order: stroke fill;
 }
-.tape { position: absolute; width: 74px; height: 22px; background: rgba(210,200,170,.75); box-shadow: 0 1px 3px rgba(0,0,0,.4); top: -8px; }
-.tape.t1 { left: -18px; transform: rotate(-38deg); }
-.tape.t2 { right: -18px; transform: rotate(38deg); }
-.poster-art { position: relative; text-align: center; padding: 6px 0 4px; }
-.orn { position: absolute; top: 6px; font-size: 46px; filter: drop-shadow(0 2px 0 rgba(0,0,0,.3)); }
-.orn.l { left: 4px; transform: rotate(-12deg); } .orn.r { right: 4px; transform: rotate(14deg); }
-.poster-title {
-  margin: 4px 0 0; font: 900 clamp(40px, 13vw, 62px)/1 Impact, "Arial Black", "Haettenschweiler", system-ui, sans-serif;
-  letter-spacing: 2px; color: #f7d117; -webkit-text-stroke: 2px #1a1209; paint-order: stroke fill;
-  text-shadow: 3px 3px 0 #1a1209; padding: 0 44px;
+.hl-sub {
+  display: flex; align-items: center; gap: 8px; margin-top: 4px; font: 900 clamp(12px, 3.6vw, 18px)/1 Impact, "Arial Black", sans-serif; letter-spacing: 4px; color: #e8d9a0;
+  text-transform: uppercase; text-shadow: 2px 2px 0 #000;
 }
-.poster-sub { margin: 2px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .5px; color: #5b4a2a; }
-.poster-menu {
-  margin-top: 14px; padding: 14px 10px; background: #0d0a0a; border-radius: 40px 30px 44px 28px / 30px 40px 28px 44px;
-  display: grid; gap: 2px; box-shadow: inset 0 0 18px rgba(0,0,0,.9);
+.hl-sub i { flex: 1; height: 3px; min-width: 14px; background: linear-gradient(90deg, #e8d9a0, transparent); }
+.hl-sub i:last-child { background: linear-gradient(270deg, #e8d9a0, transparent); }
+.home-menu {
+  position: absolute; right: 5vw; top: 50%; transform: translateY(-38%); display: flex; flex-direction: column; align-items: flex-end;
+  max-width: 94vw;
 }
-.pm {
-  background: none; border: 0; cursor: pointer; text-align: center; text-transform: uppercase; min-height: 46px; padding: 6px 10px;
-  font: 900 clamp(22px, 7vw, 30px)/1.1 Impact, "Arial Black", system-ui, sans-serif; letter-spacing: 1px;
-  color: #e2262c; text-shadow: 0 2px 0 #000, 0 0 10px rgba(226,38,44,.35);
+.hm {
+  background: none; border: 0; cursor: pointer; text-transform: uppercase; text-align: right; padding: 0 2px; margin: -1px 0;
+  font: 400 clamp(26px, 9vw, 52px)/.98 Impact, "Arial Narrow", "Haettenschweiler", "Arial Black", sans-serif; letter-spacing: 1px; white-space: nowrap;
+  color: #e6d595; text-shadow: 2px 3px 0 rgba(0,0,0,.85), 0 0 14px rgba(230,150,60,.25); transform: rotate(-2deg);
 }
-.pm:active, .pm:focus-visible { color: #fff; outline: none; text-shadow: 0 2px 0 #000, 0 0 12px rgba(255,255,255,.55); transform: scale(1.03); }
-.pm.soon { color: #6d4a4c; text-shadow: none; }
-.pm small { font: 700 11px system-ui, sans-serif; letter-spacing: 1px; color: #8d8a99; vertical-align: middle; }
+.hm1 { font-size: clamp(30px, 10.5vw, 58px); } .hm2 { font-size: clamp(22px, 7vw, 40px); margin-right: 3vw; }
+.hm3 { font-size: clamp(30px, 10vw, 54px); margin-right: 6vw; } .hm4 { font-size: clamp(24px, 8vw, 42px); margin-right: -1vw; }
+.hm5 { font-size: clamp(30px, 10vw, 54px); margin-right: 5vw; } .hm6 { font-size: clamp(22px, 7vw, 38px); margin-right: 8vw; }
+.hm.soon { color: #9f9575; }
+.hm:active, .hm:focus-visible { color: #fff; outline: none; transform: rotate(-2deg) scale(1.06); text-shadow: 2px 3px 0 #000, 0 0 18px rgba(255,200,120,.7); }
+.home-keys { position: absolute; left: 0; right: 0; bottom: calc(12px + var(--safe-bottom)); display: flex; justify-content: center; gap: 14px; }
+.home-keys span {
+  display: flex; align-items: center; gap: 8px; padding: 7px 18px; border-radius: 999px; background: linear-gradient(#2e2e32, #121214); border: 2px solid #8b8b93;
+  font: 900 13px Impact, "Arial Black", sans-serif; letter-spacing: 1px; text-transform: uppercase; color: #eee;
+}
+.gem.g { background: linear-gradient(#7be66a, #2c8a1c); width: 10px; height: 16px; }
+.home-keys .bar { width: 28px; height: 8px; border-radius: 3px; background: linear-gradient(#ddd, #888); }
+@media (orientation: landscape) and (max-height: 520px) {
+  .home-logo { top: calc(3vh + var(--safe-top)); }
+  .hl-top { font-size: clamp(40px, 11vw, 80px); }
+  .home-menu { top: 46%; }
+  .hm { font-size: clamp(20px, 6.5vh, 40px) !important; }
+}
 
 /* ---------- Setlist (papel rayado sobre madera) ---------- */
 #menu {
@@ -243,7 +255,9 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 .paper .hint, .paper .foot { color: #5a4a30; }
 .paper .btn { background: #fff8; border-color: #8a7650; color: #2a1d10; }
 .paper .btn.primary { background: #c4161c; border-color: #7a0d11; color: #fff; }
-.poster-title { font-size: clamp(34px, 11vw, 54px); padding: 0 50px; }
-.orn { font-size: 38px; }
-.pm.soon { font-size: clamp(18px, 5.6vw, 24px); }
-.pm small { white-space: nowrap; margin-left: 4px; }
+.home-shade { background: radial-gradient(ellipse at 70% 55%, rgba(0,0,0,.55), rgba(0,0,0,.82) 100%); }
+.hm { line-height: 1.1; margin: 0; -webkit-text-stroke: 1px rgba(0,0,0,.6); paint-order: stroke fill; }
+@media (orientation: portrait) {
+  .home-art { opacity: .55; }
+  .home-menu { transform: translateY(-30%); }
+}

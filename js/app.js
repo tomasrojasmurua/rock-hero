@@ -460,8 +460,15 @@
   function init() {
     document.querySelectorAll('.tab').forEach((t) => { t.onclick = () => openTab(t.dataset.tab); });
     $('btn-home').onclick = () => screen('home');
+    document.addEventListener('keydown', (e) => {
+      if (!$('home').classList.contains('active')) return;
+      const items = Array.from(document.querySelectorAll('.hm'));
+      const i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { items[(i + 1) % items.length].focus(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { items[(i - 1 + items.length) % items.length].focus(); e.preventDefault(); }
+    });
     $('home-menu').onclick = (e) => {
-      const b = e.target.closest('.pm');
+      const b = e.target.closest('.hm');
       if (!b) return;
       if (b.dataset.soon) { toast(b.dataset.soon + ': todavía no está disponible.'); return; }
       if (b.dataset.go) { openTab(b.dataset.go); screen('menu'); refresh(); }
