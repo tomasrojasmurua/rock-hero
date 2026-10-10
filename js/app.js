@@ -857,7 +857,12 @@
       hide('detail');
       refresh();
     };
-    $('btn-pause').onclick = pauseGame;
+    // pointerdown responde al instante y no depende de que iOS genere el "click"
+    for (const id of ['btn-pause', 'btn-pause2']) {
+      const b = $(id);
+      b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); pauseGame(); });
+      b.onclick = pauseGame;
+    }
     $('btn-sp').onclick = () => game && game.activateSP();
     $('p-resume').onclick = resumeGame;
     $('p-restart').onclick = () => { hide('pause'); game.paused = false; audio.resume().then(() => game.restart()); };
