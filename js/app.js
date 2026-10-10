@@ -273,6 +273,21 @@
     }
   }
 
+  // Altura de la muesca/barra de estado (env(safe-area-inset-top)); en iPhone con muesca vertical se deja un margen mínimo.
+  function safeTop() {
+    const p = document.createElement('div');
+    p.style.cssText = 'position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top,0px);visibility:hidden';
+    document.body.appendChild(p);
+    let v = p.offsetHeight;
+    p.remove();
+    const portrait = innerHeight > innerWidth;
+    // Si la página no recibe la zona segura (p. ej. dentro de otra app), se reserva un margen fijo para la muesca.
+    const fallback = !v && portrait && /iPhone/.test(navigator.userAgent) && Math.max(window.screen.width, window.screen.height) >= 812;
+    if (fallback) v = 44;
+    document.documentElement.style.setProperty('--safe-top', fallback ? v + 'px' : 'env(safe-area-inset-top, 0px)');
+    return v;
+  }
+
   async function enterGame(playable) {
     screen('game');
     goFullscreen();
@@ -283,7 +298,8 @@
       onEnd: finish,
       onPauseRequest: () => (game.paused ? resumeGame() : pauseGame()),
     });
-    game.safeTop = 0;
+    game.safeTop = safeTop();
+    window.addEventListener('resize', () => { if (game) game.safeTop = safeTop(); });
     $('mp-hud').hidden = !mp.inRound;
     $('p-restart').hidden = mp.inRound;
     game.start();
@@ -820,6 +836,8 @@
   }
 
   function init() {
+    safeTop();
+    window.addEventListener('resize', safeTop);
     document.querySelectorAll('.tab').forEach((t) => { t.onclick = () => openTab(t.dataset.tab); });
     $('btn-home').onclick = () => screen('home');
     document.addEventListener('keydown', (e) => {
@@ -858,7 +876,7 @@
       refresh();
     };
     // pointerdown responde al instante y no depende de que iOS genere el "click"
-    for (const id of ['btn-pause', 'btn-pause2']) {
+    for (const id of ['btn-pause']) {
       const b = $(id);
       b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); pauseGame(); });
       b.onclick = pauseGame;

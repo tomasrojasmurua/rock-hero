@@ -128,7 +128,6 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
   z-index: 2;
 }
 #btn-pause { top: calc(12px + var(--safe-top)); }
-.hud-btn.right { left: auto; right: calc(12px + env(safe-area-inset-right, 0px)); top: calc(12px + var(--safe-top)); }
 #btn-sp { top: calc(72px + var(--safe-top)); font-size: 20px; opacity: 0.35; }
 #btn-sp.ready { opacity: 1; border-color: var(--sp); box-shadow: 0 0 16px var(--sp); animation: pulse 0.8s infinite alternate; }
 @keyframes pulse { to { transform: scale(1.08); } }
