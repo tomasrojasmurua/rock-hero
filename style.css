@@ -28,10 +28,7 @@ button, input { font: inherit; color: inherit; }
 .screen { display: none; position: fixed; inset: 0; }
 .screen.active { display: block; }
 
-#menu {
-  overflow-y: auto; padding: calc(12px + var(--safe-top)) 16px calc(24px + var(--safe-bottom));
-  max-width: 720px; margin: 0 auto;
-}
+
 .top { display: flex; align-items: center; justify-content: space-between; }
 h1 { font-size: 28px; margin: 8px 0; letter-spacing: -0.5px; }
 h1 .logo { filter: drop-shadow(0 0 8px #a855f7); }
@@ -157,3 +154,96 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 .band-list .who b { display: block; font-size: 14px; }
 .band-list .who span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .band-list .btn { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+
+/* ---------- Menú principal (póster sobre pared de ladrillo) ---------- */
+#home {
+  background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 35%, rgba(0,0,0,.75) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='56'%3E%3Crect width='64' height='56' fill='%23120807'/%3E%3Crect x='1' y='1' width='62' height='26' fill='%23552017'/%3E%3Crect x='-30' y='29' width='61' height='26' fill='%23642a1c'/%3E%3Crect x='33' y='29' width='62' height='26' fill='%234a1a14'/%3E%3C/svg%3E");
+  overflow-y: auto; padding: calc(20px + var(--safe-top)) 16px calc(20px + var(--safe-bottom));
+}
+#home.active { display: flex; align-items: center; justify-content: center; }
+.poster {
+  position: relative; width: min(100%, 440px); margin: auto; padding: 26px 20px 20px; transform: rotate(-1deg);
+  background: radial-gradient(circle at 30% 20%, #f4ecd3, #ddd1ad 70%, #c9bb92);
+  box-shadow: 0 14px 40px rgba(0,0,0,.7), inset 0 0 40px rgba(120,90,40,.35); color: #1a1209;
+}
+.tape { position: absolute; width: 74px; height: 22px; background: rgba(210,200,170,.75); box-shadow: 0 1px 3px rgba(0,0,0,.4); top: -8px; }
+.tape.t1 { left: -18px; transform: rotate(-38deg); }
+.tape.t2 { right: -18px; transform: rotate(38deg); }
+.poster-art { position: relative; text-align: center; padding: 6px 0 4px; }
+.orn { position: absolute; top: 6px; font-size: 46px; filter: drop-shadow(0 2px 0 rgba(0,0,0,.3)); }
+.orn.l { left: 4px; transform: rotate(-12deg); } .orn.r { right: 4px; transform: rotate(14deg); }
+.poster-title {
+  margin: 4px 0 0; font: 900 clamp(40px, 13vw, 62px)/1 Impact, "Arial Black", "Haettenschweiler", system-ui, sans-serif;
+  letter-spacing: 2px; color: #f7d117; -webkit-text-stroke: 2px #1a1209; paint-order: stroke fill;
+  text-shadow: 3px 3px 0 #1a1209; padding: 0 44px;
+}
+.poster-sub { margin: 2px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .5px; color: #5b4a2a; }
+.poster-menu {
+  margin-top: 14px; padding: 14px 10px; background: #0d0a0a; border-radius: 40px 30px 44px 28px / 30px 40px 28px 44px;
+  display: grid; gap: 2px; box-shadow: inset 0 0 18px rgba(0,0,0,.9);
+}
+.pm {
+  background: none; border: 0; cursor: pointer; text-align: center; text-transform: uppercase; min-height: 46px; padding: 6px 10px;
+  font: 900 clamp(22px, 7vw, 30px)/1.1 Impact, "Arial Black", system-ui, sans-serif; letter-spacing: 1px;
+  color: #e2262c; text-shadow: 0 2px 0 #000, 0 0 10px rgba(226,38,44,.35);
+}
+.pm:active, .pm:focus-visible { color: #fff; outline: none; text-shadow: 0 2px 0 #000, 0 0 12px rgba(255,255,255,.55); transform: scale(1.03); }
+.pm.soon { color: #6d4a4c; text-shadow: none; }
+.pm small { font: 700 11px system-ui, sans-serif; letter-spacing: 1px; color: #8d8a99; vertical-align: middle; }
+
+/* ---------- Setlist (papel rayado sobre madera) ---------- */
+#menu {
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 2px, transparent 2px 11px),
+    repeating-linear-gradient(0deg, rgba(255,200,140,.07) 0 6px, transparent 6px 27px),
+    linear-gradient(180deg, #54351f, #3e2515);
+}
+#menu.active { display: flex; flex-direction: column; }
+.wood-top { padding: calc(8px + var(--safe-top)) 14px 0; display: flex; }
+.pill {
+  background: linear-gradient(#4a4a50, #2a2a2e); border: 2px solid #8a8a92; border-radius: 999px; color: #fff;
+  font: 900 14px Impact, "Arial Black", system-ui, sans-serif; letter-spacing: 1px; text-transform: uppercase; padding: 7px 16px; cursor: pointer;
+}
+.tabs { display: flex; gap: 6px; padding: 8px 14px 0 18px; align-items: flex-end; }
+.tab {
+  border: 0; cursor: pointer; padding: 9px 16px 7px; border-radius: 10px 10px 0 0; display: flex; align-items: center; gap: 8px;
+  font: 400 21px/1 "Marker Felt", "Bradley Hand", "Segoe Script", "Comic Sans MS", cursive; color: #2a1d10;
+  background: #bcd3d6; opacity: .85; transform: translateY(3px);
+}
+.tab.t-setlist { background: #efe3c0; }
+.tab.on { opacity: 1; transform: none; padding-top: 12px; }
+.gem { width: 14px; height: 22px; border-radius: 7px 7px 3px 3px; border: 2px solid #3a2a14; display: inline-block; }
+.gem.y { background: linear-gradient(#f7e04a, #b89a10); } .gem.b { background: linear-gradient(#8aa4ff, #3b4fb8); }
+.paper {
+  flex: 1; min-height: 0; overflow-y: auto; margin: 0 10px calc(10px + var(--safe-bottom)); padding: 10px 14px 26px 62px;
+  border-radius: 4px 14px 4px 4px; max-width: 760px; width: calc(100% - 20px); align-self: center;
+  background:
+    linear-gradient(90deg, transparent 50px, rgba(205,70,60,.75) 50px 52px, transparent 52px),
+    repeating-linear-gradient(180deg, transparent 0 31px, rgba(92,140,190,.4) 31px 32px),
+    radial-gradient(ellipse at 20% 10%, #f6ecc9, #e8dab0 80%);
+  box-shadow: 0 8px 26px rgba(0,0,0,.55); color: #2a1d10; overscroll-behavior: contain;
+}
+.paper-title {
+  margin: 2px 0 6px; font: 400 clamp(44px, 14vw, 66px)/1 "Marker Felt", "Bradley Hand", "Segoe Script", "Comic Sans MS", cursive;
+  color: #3a2c1a; text-shadow: 2px 2px 0 rgba(120,90,50,.35); transform: rotate(-2deg); transform-origin: left;
+}
+.paper #search { background: rgba(255,255,255,.55); border: 1px dashed #8a7650; color: #2a1d10; border-radius: 6px; margin: 4px 0 10px; }
+.paper #search::placeholder { color: #8a7650; }
+.paper #song-list { gap: 0; }
+.paper .song {
+  background: transparent; border: 0; border-bottom: 1px dashed rgba(90,110,150,.55); border-radius: 0; padding: 9px 4px 9px 2px;
+  margin-left: -50px; padding-left: 52px; position: relative;
+}
+.paper .song:active { background: rgba(255,255,255,.65); }
+.paper .song .cover { position: absolute; left: 4px; top: 8px; width: 44px; height: 44px; border-radius: 6px; font-size: 20px; border: 2px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,.4); transform: rotate(-4deg); }
+.paper .song .name { font: 700 22px/1.2 "Marker Felt", "Bradley Hand", "Segoe Script", "Comic Sans MS", cursive; color: #3a2a10; }
+.paper .song .artist { font: 700 13px system-ui, sans-serif; letter-spacing: 1px; text-transform: uppercase; color: #4a6384; margin-left: 14px; }
+.paper .song .tags { color: #a2552a; margin-left: 14px; font-weight: 700; }
+.paper .empty { color: #6a5535; }
+.paper .hint, .paper .foot { color: #5a4a30; }
+.paper .btn { background: #fff8; border-color: #8a7650; color: #2a1d10; }
+.paper .btn.primary { background: #c4161c; border-color: #7a0d11; color: #fff; }
+.poster-title { font-size: clamp(34px, 11vw, 54px); padding: 0 50px; }
+.orn { font-size: 38px; }
+.pm.soon { font-size: clamp(18px, 5.6vw, 24px); }
+.pm small { white-space: nowrap; margin-left: 4px; }

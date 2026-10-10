@@ -74,7 +74,7 @@
       li.onclick = () => openDetail(s);
       ul.appendChild(li);
       marquee(li.querySelector('.name'), s.name);
-      marquee(li.querySelector('.artist'), s.artist || 'Artista desconocido');
+      marquee(li.querySelector('.artist'), (s.artist || 'Artista desconocido') + (s.year ? ', ' + s.year : ''));
       loadCover(s, li.querySelector('.cover'));
     }
   }
@@ -364,6 +364,7 @@
       if (saved && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
       loading(null);
       await refresh();
+      if (saved) openTab('setlist');
       let msg = saved ? 'Importadas ' + saved + ' canciones nuevas.' : (skipped ? 'No hay canciones nuevas.' : 'No se encontró ninguna canción (hace falta notes.chart o notes.mid).');
       if (skipped) msg += ' Omitidas ' + skipped + ' que ya estaban.';
       if (errors.length) msg += '\n' + errors.slice(0, 4).join('\n') + (errors.length > 4 ? '\n…y ' + (errors.length - 4) + ' más' : '');
@@ -449,7 +450,22 @@
   }
 
   // ---------- arranque ----------
+  function openTab(tab) {
+    $('panel-setlist').hidden = tab !== 'setlist';
+    $('panel-import').hidden = tab !== 'import';
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === tab));
+    $('paper').scrollTop = 0;
+  }
+
   function init() {
+    document.querySelectorAll('.tab').forEach((t) => { t.onclick = () => openTab(t.dataset.tab); });
+    $('btn-home').onclick = () => screen('home');
+    $('home-menu').onclick = (e) => {
+      const b = e.target.closest('.pm');
+      if (!b) return;
+      if (b.dataset.soon) { toast(b.dataset.soon + ': todavía no está disponible.'); return; }
+      if (b.dataset.go) { openTab(b.dataset.go); screen('menu'); refresh(); }
+    };
     $('in-folder').onchange = (e) => { handleImport(e.target.files); e.target.value = ''; };
     $('in-files').onchange = (e) => { handleImport(e.target.files); e.target.value = ''; };
     if (!('webkitdirectory' in document.createElement('input'))) $('lbl-folder').hidden = true;

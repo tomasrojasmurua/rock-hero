@@ -15,24 +15,54 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Biblioteca -->
-  <section id="menu" class="screen active">
-    <header class="top">
-      <h1><span class="logo">🎸</span> Trastes</h1>
-      <button id="btn-settings" class="icon-btn" aria-label="Ajustes">⚙️</button>
-    </header>
-    <div class="import-bar">
-      <label class="btn primary" id="lbl-folder">📁 Importar carpeta
-        <input id="in-folder" type="file" webkitdirectory directory multiple hidden>
-      </label>
-      <label class="btn">📦 Archivos / .zip / .sng
-        <input id="in-files" type="file" multiple hidden>
-      </label>
+  <!-- Menú principal -->
+  <section id="home" class="screen active">
+    <div class="poster">
+      <i class="tape t1"></i><i class="tape t2"></i>
+      <div class="poster-art"><span class="orn l">💀</span><span class="orn r">🎸</span>
+        <h1 class="poster-title">TRASTES</h1>
+        <p class="poster-sub">Importa tus canciones de Clone Hero</p>
+      </div>
+      <nav class="poster-menu" id="home-menu">
+        <button class="pm" data-go="setlist">Partida rápida</button>
+        <button class="pm" data-go="import">Importar canciones</button>
+        <button class="pm soon" data-soon="Carrera">Carrera <small>pronto</small></button>
+        <button class="pm soon" data-soon="Multijugador">Multijugador <small>pronto</small></button>
+        <button class="pm soon" data-soon="Entrenamiento">Entrenamiento <small>pronto</small></button>
+        <button class="pm" id="btn-settings">Opciones</button>
+      </nav>
     </div>
-    <p class="hint" id="import-hint">Importa canciones de Clone Hero: una carpeta con <b>notes.chart</b> o <b>notes.mid</b> y su audio (song.ogg, .opus, .mp3…), un <b>.zip</b> con una o varias carpetas, o archivos <b>.sng</b>.</p>
-    <input id="search" type="search" placeholder="Buscar canción o artista" autocomplete="off">
-    <ul id="song-list"></ul>
-    <p class="foot" id="storage-info"></p>
+  </section>
+
+  <!-- Setlist (biblioteca) -->
+  <section id="menu" class="screen">
+    <div class="wood-top">
+      <button class="pill" id="btn-home">‹ Menú</button>
+    </div>
+    <div class="tabs">
+      <button class="tab t-setlist on" data-tab="setlist"><i class="gem y"></i>setlist</button>
+      <button class="tab t-import" data-tab="import"><i class="gem b"></i>importar</button>
+    </div>
+    <div class="paper" id="paper">
+      <div id="panel-setlist">
+        <h2 class="paper-title">Setlist</h2>
+        <input id="search" type="search" placeholder="Buscar canción o artista" autocomplete="off">
+        <ul id="song-list"></ul>
+      </div>
+      <div id="panel-import" hidden>
+        <h2 class="paper-title">Importar</h2>
+        <div class="import-bar">
+          <label class="btn primary" id="lbl-folder">📁 Importar carpeta
+            <input id="in-folder" type="file" webkitdirectory directory multiple hidden>
+          </label>
+          <label class="btn">📦 Archivos / .zip / .sng
+            <input id="in-files" type="file" multiple hidden>
+          </label>
+        </div>
+        <p class="hint" id="import-hint">Importa canciones de Clone Hero: una carpeta con <b>notes.chart</b> o <b>notes.mid</b> y su audio (song.ogg, .opus, .mp3…), un <b>.zip</b> con una o varias carpetas, o archivos <b>.sng</b>. Las que ya tienes se omiten.</p>
+        <p class="foot" id="storage-info"></p>
+      </div>
+    </div>
   </section>
 
   <!-- Juego -->
