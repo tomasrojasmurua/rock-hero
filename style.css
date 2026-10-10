@@ -145,7 +145,7 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 #toast {
   position: fixed; left: 50%; bottom: calc(24px + var(--safe-bottom)); transform: translateX(-50%);
   background: #312e81; color: #fff; padding: 12px 16px; border-radius: 12px; z-index: 20; max-width: calc(100% - 32px);
-  font-size: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); white-space: pre-line;
+  font-size: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); white-space: pre-line; pointer-events: none;
 }
 
 .band-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
@@ -261,3 +261,33 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
   .home-art { opacity: .55; }
   .home-menu { transform: translateY(-30%); }
 }
+
+/* ---------- Multijugador ---------- */
+.text-in {
+  width: 100%; margin-top: 6px; padding: 12px 14px; border-radius: 12px; border: 1px solid #3b3370;
+  background: var(--panel-2); color: var(--text); font-size: 16px; outline: none;
+}
+.row .text-in { margin-top: 0; min-width: 0; text-transform: uppercase; letter-spacing: 2px; }
+.room-code { font-size: 15px; margin: 0 0 4px; }
+.room-code b { font-size: 26px; letter-spacing: 4px; color: #c4b5fd; margin-left: 6px; }
+#room-players li .tag { font-size: 12px; color: var(--muted); white-space: nowrap; }
+#room-players li .tag.ok { color: #4ade80; }
+#room-go:disabled, #room-pick:disabled { opacity: 0.45; }
+#room-pill {
+  position: fixed; right: 14px; top: calc(8px + var(--safe-top)); z-index: 9;
+  padding: 10px 16px; border-radius: 999px; border: 1px solid var(--accent);
+  background: rgba(26, 21, 53, 0.92); font-weight: 700; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+#mp-hud {
+  position: absolute; left: 12px; top: calc(122px + var(--safe-top)); z-index: 2; margin: 0; padding: 6px 10px;
+  list-style: none; border-radius: 10px; background: rgba(0, 0, 0, 0.5); font-size: 13px; pointer-events: none;
+  max-width: 45vw;
+}
+#mp-hud li { display: flex; gap: 8px; justify-content: space-between; white-space: nowrap; }
+#mp-hud li span { overflow: hidden; text-overflow: ellipsis; }
+#mp-hud li.me { color: #c4b5fd; font-weight: 700; }
+#mp-hud li b { font-variant-numeric: tabular-nums; }
+.room-rank { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 6px; text-align: left; }
+.room-rank li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; border-radius: 10px; background: var(--panel-2); }
+.room-rank li.me { outline: 1px solid var(--accent); }
+.room-rank li.win b { color: #fbbf24; }
