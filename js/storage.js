@@ -15,7 +15,9 @@
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
+      req.onblocked = () => reject(new Error('Cierra otras pestañas de la app y vuelve a abrir'));
     });
+    dbp.catch(() => { dbp = null; });
     return dbp;
   }
 
@@ -35,9 +37,10 @@
     // Los metadatos van separados de los archivos para que listar sea rápido.
     async addSong(song) {
       const { files, ...meta } = song;
-      // Safari a veces no guarda Blobs de archivos externos: los copiamos a memoria primero.
+      // Safari (iOS) pierde las referencias a Blobs guardados en IndexedDB ("The object can not be found here"):
+      // se guardan como ArrayBuffer y se reconstruyen al leer.
       const copies = {};
-      for (const [n, b] of Object.entries(files)) copies[n] = new Blob([await b.arrayBuffer()], { type: b.type });
+      for (const [n, b] of Object.entries(files)) copies[n] = { type: b.type, data: await b.arrayBuffer() };
       await tx(['songs', 'files'], 'readwrite', (t) => {
         t.objectStore('songs').put(meta);
         t.objectStore('files').put({ id: meta.id, files: copies });
@@ -47,7 +50,12 @@
       return tx('songs', 'readonly', (t) => req2p(t.objectStore('songs').getAll()));
     },
     getFiles(id) {
-      return tx('files', 'readonly', (t) => req2p(t.objectStore('files').get(id))).then((r) => (r ? r.files : null));
+      return tx('files', 'readonly', (t) => req2p(t.objectStore('files').get(id))).then((r) => {
+        if (!r) return null;
+        const out = {};
+        for (const [n, v] of Object.entries(r.files)) out[n] = v && v.data ? new Blob([v.data], { type: v.type }) : v;
+        return out;
+      });
     },
     deleteSong(id) {
       return tx(['songs', 'files'], 'readwrite', (t) => {

@@ -160,9 +160,12 @@
         audio.setBuffers([sampleAudio.backing], [sampleAudio.lead]);
       } else {
         loading('Cargando ' + song.name + '…');
-        const files = await GH.store.getFiles(song.id);
+        let files;
+        try { files = await GH.store.getFiles(song.id); }
+        catch (e) { throw new Error('No se pudo leer la canción guardada. Bórrala (Eliminar) e impórtala de nuevo.'); }
         if (!files) throw new Error('No se encontraron los archivos de la canción');
-        parsed = await GH.parseSongFiles(files, song.ini);
+        try { parsed = await GH.parseSongFiles(files, song.ini); }
+        catch (e) { throw new Error('Archivo de notas ilegible: ' + (e.message || e) + '. Elimina e importa de nuevo.'); }
         const delay = parseFloat(song.ini && song.ini.delay) || 0;
         parsed.offset = (parsed.offset || 0) + delay / 1000;
         await audio.loadStems(files, inst, loading);
