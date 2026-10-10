@@ -2,10 +2,27 @@
 (function (G) {
   const GH = (G.GH = G.GH || {});
 
+  // Pista del instrumento que se silencia al fallar; se usa la primera expresión que encuentre archivo.
+  // En Rock Band 1 el bajo suele venir como rhythm.opus.
   const LEAD_STEMS = {
-    guitar: /^guitar\./, coop: /^guitar\./, rhythm: /^rhythm\./, bass: /^bass\./,
-    keys: /^keys\./, drums: /^drums(_\d)?\./,
+    guitar: [/^guitar\./], coop: [/^guitar\./], rhythm: [/^rhythm\./], bass: [/^bass\./, /^rhythm\./],
+    keys: [/^keys\./], drums: [/^drums(_\d)?\./],
   };
+  // Pistas que no aportan a la partida y gastan memoria
+  const SKIP_STEMS = /^crowd\./;
+
+  // Suma `src` en `acc` sobre el mismo AudioBuffer (el más largo) para no acumular una copia por pista.
+  function mixInto(acc, src) {
+    if (!acc) return src;
+    let big = acc, small = src;
+    if (src.length > acc.length) { big = src; small = acc; }
+    for (let c = 0; c < big.numberOfChannels; c++) {
+      const dst = big.getChannelData(c);
+      const from = small.getChannelData(Math.min(c, small.numberOfChannels - 1));
+      for (let k = 0; k < from.length; k++) dst[k] += from[k];
+    }
+    return big;
+  }
 
   class AudioEngine {
     constructor() {
@@ -50,21 +67,23 @@
       });
     }
 
+    // Decodifica de una en una y mezcla en dos búferes (acompañamiento e instrumento) para que
+    // canciones con 8 pistas quepan en la memoria de un móvil.
     async loadStems(files, instrument, onProgress) {
       this.unlock();
-      const names = GH.audioStems(files);
-      // Si existe song.* + pistas separadas se usan todas; si solo hay "guitar.ogg" se toma como pista principal.
-      const leadRe = LEAD_STEMS[instrument];
-      this.backing = [];
-      this.lead = [];
-      let i = 0;
+      const names = GH.audioStems(files).filter((n) => !SKIP_STEMS.test(n) || GH.audioStems(files).length === 1);
+      const leadRes = LEAD_STEMS[instrument] || [];
+      const leadRe = leadRes.find((re) => names.some((n) => re.test(n)));
+      let back = null, lead = null, i = 0;
       for (const n of names) {
         onProgress && onProgress('Decodificando audio ' + (++i) + '/' + names.length + '…');
         let buf;
         try { buf = await this.decode(await files[n].arrayBuffer()); }
         catch (e) { throw new Error('No se pudo decodificar ' + n + '. Tu navegador quizá no soporta ese formato (prueba con Chrome).'); }
-        if (leadRe && leadRe.test(n) && names.length > 1) this.lead.push(buf); else this.backing.push(buf);
+        if (leadRe && leadRe.test(n) && names.length > 1) lead = mixInto(lead, buf); else back = mixInto(back, buf);
       }
+      this.backing = back ? [back] : [];
+      this.lead = lead ? [lead] : [];
       this.duration = Math.max(0, ...this.backing.concat(this.lead).map((b) => b.duration));
     }
 
