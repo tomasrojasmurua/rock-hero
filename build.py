@@ -1,4 +1,4 @@
-"""Genera dist/trastes.html: la app en un solo archivo (sin service worker), útil para alojarla en cualquier sitio."""
+"""Genera dist/frets.html: la app en un solo archivo (sin service worker), útil para alojarla en cualquier sitio."""
 import re, pathlib
 root = pathlib.Path(__file__).parent
 html = (root / 'index.html').read_text()
@@ -15,8 +15,8 @@ html = html.replace('./vendor/three/addons/', 'https://cdn.jsdelivr.net/npm/thre
 html = re.sub(r'<script type="module" src="(js/[\w-]+\.js)"></script>',
               lambda m: '<script type="module">\n' + (root / m.group(1)).read_text() + '</script>', html)
 (root / 'dist').mkdir(exist_ok=True)
-(root / 'dist' / 'trastes.html').write_text(html)
-print('dist/trastes.html', len(html), 'bytes')
+(root / 'dist' / 'frets.html').write_text(html)
+print('dist/frets.html', len(html), 'bytes')
 # Variante para publicar como Artifact: solo el contenido, sin doctype/html/head/body.
 art = re.sub(r'<!doctype html>\s*|</?html[^>]*>|</?head>|</?body>|<meta [^>]*>\s*', '', html)
 (root / 'dist' / 'artifact.html').write_text(art.strip() + '\n')

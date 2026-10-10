@@ -823,7 +823,7 @@
   }
 
   function roomLinkText() {
-    return '¡Toca conmigo en Trastes! Entra a mi sala: ' + room.link;
+    return '¡Toca conmigo en Frets! Entra a mi sala: ' + room.link;
   }
 
   function bindRoom() {

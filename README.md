@@ -1,4 +1,4 @@
-# Trastes
+# Frets
 
 Juego de ritmo táctil de 5 carriles (estilo Guitar Hero / Clone Hero) como PWA instalable. Sin dependencias ni compilación: HTML, CSS y JavaScript plano.
 
@@ -28,7 +28,7 @@ Para instalarla en el móvil debe servirse por HTTPS y usar "Añadir a pantalla 
 
 El workflow `.github/workflows/pages.yml` publica la app en cada push a `main`, en https://tomasrojasmurua.github.io/rock-hero/. Requiere activar Pages una vez en *Settings → Pages → Source: GitHub Actions*. En repos privados, Pages solo está disponible con GitHub Pro.
 
-`python3 build.py` genera `dist/trastes.html`, la app en un solo archivo sin service worker.
+`python3 build.py` genera `dist/frets.html`, la app en un solo archivo sin service worker.
 
 ## Estructura
 
