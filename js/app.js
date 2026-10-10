@@ -42,6 +42,8 @@
     }
     songs.sort((a, b) => (a.artist + a.name).localeCompare(b.artist + b.name, 'es'));
     renderList();
+    const total = songs.length + 1; // más la canción de ejemplo
+    $('home-lib').textContent = total + (total === 1 ? ' canción' : ' canciones') + ' en tu setlist';
     if (navigator.storage && navigator.storage.estimate) {
       navigator.storage.estimate().then((est) => {
         const mb = (x) => (x / 1048576).toFixed(0);
@@ -879,7 +881,32 @@
     root.hidden = false;
   }
 
+  // Decorado del menú principal: barras del ecualizador, chispas y opción resaltada.
+  function decorateHome() {
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const eq = $('hs-eq');
+    for (let i = 0; i < 28; i++) {
+      const b = document.createElement('i');
+      b.style.cssText = `--t:${rnd(0.28, 0.7).toFixed(2)}s;--d:${rnd(-1, 0).toFixed(2)}s;--h:${rnd(0.35, 1).toFixed(2)}`;
+      eq.appendChild(b);
+    }
+    const sparks = $('hs-sparks');
+    for (let i = 0; i < 16; i++) {
+      const s = document.createElement('i');
+      s.style.cssText = `--x:${rnd(0, 100).toFixed(1)}%;--s:${rnd(2, 4.5).toFixed(1)}px;--t:${rnd(4, 8).toFixed(1)}s;--d:${rnd(-8, 0).toFixed(1)}s;--dx:${rnd(-40, 40).toFixed(0)}px`;
+      sparks.appendChild(s);
+    }
+    const items = Array.from(document.querySelectorAll('.hm'));
+    const select = (b) => items.forEach((x) => x.classList.toggle('sel', x === b));
+    items.forEach((b) => {
+      b.addEventListener('pointerenter', () => select(b));
+      b.addEventListener('pointerdown', () => select(b));
+      b.addEventListener('focus', () => select(b));
+    });
+  }
+
   function init() {
+    decorateHome();
     safeTop();
     window.addEventListener('resize', safeTop);
     document.querySelectorAll('.tab').forEach((t) => { t.onclick = () => openTab(t.dataset.tab); });
