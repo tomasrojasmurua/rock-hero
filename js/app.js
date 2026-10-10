@@ -206,6 +206,7 @@
   }
 
   async function startGame() {
+    if (performance.now() < startLockUntil) return;
     const { song, inst, diff } = current;
     rememberChoice(inst, diff);
     audio.unlock(); // dentro del gesto del usuario
@@ -293,11 +294,20 @@
     return v;
   }
 
+  // Tras Salir no se permite arrancar otra partida durante un momento (evita toques fantasma que reinician la canción).
+  let startLockUntil = 0, entering = false;
   async function enterGame(playable) {
+    if (entering || performance.now() < startLockUntil) return;
+    entering = true;
+    try { await enterGameNow(playable); } finally { entering = false; }
+  }
+  async function enterGameNow(playable) {
     screen('game');
     goFullscreen();
     if (game) game.destroy();
     const stage3d = await prepareStage3D();
+    if (performance.now() < startLockUntil) { screen('menu'); return; }
+    if (game) game.destroy();
     game = new GH.Game({
       canvas: $('canvas'), audio, settings, playable, stage3d,
       onEnd: finish,
@@ -334,6 +344,7 @@
   }
   function quitGame() {
     hide('pause'); hide('results');
+    startLockUntil = performance.now() + 1200;
     const g = game, wasRound = mp.inRound;
     try { audio.stop(); } catch (e) { /* nada */ }
     try {
@@ -895,7 +906,7 @@
     }
     $('btn-sp').onclick = () => game && game.activateSP();
     $('p-resume').onclick = pauseGuard(resumeGame);
-    $('p-restart').onclick = pauseGuard(() => { hide('pause'); game.paused = false; audio.resume().then(() => game.restart()); });
+    $('p-restart').onclick = pauseGuard(() => { if (performance.now() < startLockUntil) return; hide('pause'); game.paused = false; audio.resume().then(() => game.restart()); });
     $('p-quit').onclick = pauseGuard(quitGame);
     $('r-again').onclick = () => { hide('results'); audio.unlock(); enterGame(game.play); };
     $('r-menu').onclick = quitGame;
