@@ -69,11 +69,12 @@
       const insts = Object.keys(s.tracks).map((i) => GH.INSTRUMENTS[i]).join(' · ');
       li.innerHTML =
         '<div class="cover">' + (s.builtin ? '⭐' : '🎵') + '</div>' +
-        '<div class="info"><div class="name">' + esc(s.name) + '</div>' +
-        '<div class="artist">' + esc(s.artist || 'Artista desconocido') + '</div>' +
+        '<div class="info"><div class="name"></div><div class="artist"></div>' +
         '<div class="tags">' + esc(insts) + (best ? ' · ' + '★'.repeat(Math.min(5, best.stars)) : '') + '</div></div>';
       li.onclick = () => openDetail(s);
       ul.appendChild(li);
+      marquee(li.querySelector('.name'), s.name);
+      marquee(li.querySelector('.artist'), s.artist || 'Artista desconocido');
       loadCover(s, li.querySelector('.cover'));
     }
   }
@@ -91,12 +92,30 @@
     if (url) { el.style.backgroundImage = 'url("' + url + '")'; el.textContent = ''; }
   }
 
+  // Texto largo: recortado en una línea que se desliza de lado a lado (nunca ensancha la pantalla).
+  function marquee(el, text) {
+    el.classList.add('mq');
+    el.classList.remove('run');
+    const sp = document.createElement('span');
+    sp.textContent = text;
+    el.textContent = '';
+    el.appendChild(sp);
+    requestAnimationFrame(() => {
+      const over = sp.offsetWidth - el.clientWidth;
+      if (el.clientWidth > 0 && over > 2) {
+        el.style.setProperty('--mq-d', over + 'px');
+        el.style.setProperty('--mq-t', Math.max(5, over / 25 + 3) + 's');
+        el.classList.add('run');
+      }
+    });
+  }
+
   // ---------- detalle ----------
   function openDetail(s) {
     current = { song: s, inst: null, diff: null };
-    $('d-name').textContent = s.name;
-    $('d-artist').textContent = [s.artist, s.album, s.year].filter(Boolean).join(' · ');
-    $('d-charter').textContent = s.charter ? 'Chart: ' + s.charter : '';
+    marquee($('d-name'), s.name);
+    marquee($('d-artist'), [s.artist, s.album, s.year].filter(Boolean).join(' · '));
+    marquee($('d-charter'), s.charter ? 'Chart: ' + s.charter : '');
     $('d-delete').hidden = !!s.builtin;
     const cov = $('d-cover');
     cov.style.backgroundImage = '';
