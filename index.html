@@ -216,6 +216,7 @@
         <input id="s-offset" type="range" min="-300" max="500" step="5">
       </label>
       <button id="s-calibrate" class="btn wide">🎧 Calibrar tocando al ritmo</button>
+      <button id="s-touchdiag" class="btn wide">👆 Diagnóstico de toque</button>
       <label class="field">Ventana de acierto (ms) <output id="o-window"></output>
         <input id="s-window" type="range" min="50" max="160" step="5">
       </label>
@@ -235,6 +236,13 @@
   </div>
 
   <!-- Calibración -->
+  <div id="touch-diag" hidden>
+    <div id="td-rows"></div>
+    <pre id="td-info"></pre>
+    <i id="td-dot"></i>
+    <button id="td-close">Cerrar</button>
+  </div>
+
   <div id="calib" class="sheet" hidden>
     <div class="sheet-card center" id="calib-pad">
       <h2>Calibración</h2>

@@ -858,6 +858,27 @@
     $('paper').scrollTop = 0;
   }
 
+  function openTouchDiag() {
+    const root = $('touch-diag'), rows = $('td-rows'), info = $('td-info'), dot = $('td-dot');
+    rows.innerHTML = '';
+    for (let y = 0; y < innerHeight; y += 100) { const b = document.createElement('b'); b.style.top = y + 2 + 'px'; b.textContent = 'y=' + y; rows.appendChild(b); }
+    const vv = window.visualViewport;
+    const show = (e) => {
+      if (e) { dot.style.display = 'block'; dot.style.left = e.clientX + 'px'; dot.style.top = e.clientY + 'px'; }
+      info.textContent = 'Toca la pantalla: el círculo debe quedar justo bajo tu dedo.\n' +
+        (e ? 'clientX/Y: ' + Math.round(e.clientX) + ' / ' + Math.round(e.clientY) + '\n' : '') +
+        'innerW/H: ' + innerWidth + ' / ' + innerHeight + '\n' +
+        'scrollX/Y: ' + Math.round(scrollX) + ' / ' + Math.round(scrollY) + '\n' +
+        (vv ? 'visualViewport offsetTop/pageTop/scale/height: ' + [vv.offsetTop, vv.pageTop, vv.scale, vv.height].map((n) => +n.toFixed(1)).join(' / ') + '\n' : '') +
+        'screen: ' + window.screen.width + 'x' + window.screen.height + ' dpr ' + devicePixelRatio + '\n' +
+        '--safe-top: ' + getComputedStyle(document.documentElement).getPropertyValue('--safe-top');
+    };
+    root.onpointerdown = root.onpointermove = (e) => { if (e.target.id !== 'td-close') show(e); };
+    dot.style.display = 'none';
+    show(null);
+    root.hidden = false;
+  }
+
   function init() {
     safeTop();
     window.addEventListener('resize', safeTop);
@@ -914,6 +935,12 @@
     $('btn-settings').onclick = () => { bindSettings(); renderBandList(); show('settings'); };
     $('s-close').onclick = () => hide('settings');
     $('s-calibrate').onclick = startCalibration;
+    $('s-touchdiag').onclick = openTouchDiag;
+    $('td-close').onclick = () => { $('touch-diag').hidden = true; };
+    // La página nunca debe desplazarse: en iPhone un desplazamiento invisible descuadra los toques.
+    const unscroll = () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); };
+    window.addEventListener('scroll', unscroll, { passive: true });
+    if (window.visualViewport) window.visualViewport.addEventListener('scroll', unscroll);
     $('calib-pad').addEventListener('pointerdown', calibTap);
     $('calib-cancel').onclick = () => endCalibration(true);
     document.addEventListener('visibilitychange', () => { if (document.hidden && game && game.running) pauseGame(); });
