@@ -32,23 +32,40 @@
   }
 
   // ---------------- sprites ----------------
-  const GW = 128, GHh = 104, GCY = 40; // lienzo de gema y centro de su cara superior
+  const GW = 128, GHh = 116, GCY = 40; // lienzo de gema y centro de su cara superior
+  // sp: false (normal), true (frase de poder estelar) u 'on' (poder estelar activado: todas celestes)
   function gemSprite(color, type, sp) {
     const c = mk(GW, GHh), g = c.getContext('2d');
-    const cx = 64, cy = GCY, rx = 56, ry = 25, h = 20;
-    ell(g, cx, cy + h + 9, rx + 3, ry + 3); g.fillStyle = 'rgba(0,0,0,0.5)'; g.fill();
-    // banda metálica (lateral del cilindro)
-    g.fillStyle = metal(g, cx - rx, 0, cx + rx, 0, sp ? [0, 25, 45] : null);
-    ell(g, cx, cy + h, rx, ry); g.fill();
-    g.fillRect(cx - rx, cy, rx * 2, h);
-    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 2;
+    const cx = 64, cy = GCY, rx = 56, ry = 25, h = 30;
+    const on = sp === 'on';
+    // sombra sobre el tablero
+    const sh = g.createRadialGradient(cx, cy + h + 12, 4, cx, cy + h + 12, rx + 6);
+    sh.addColorStop(0, 'rgba(0,0,0,0.7)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+    ell(g, cx, cy + h + 12, rx + 6, ry + 6); g.fillStyle = sh; g.fill();
+    // base oscura y banda metálica (lateral del cilindro)
+    ell(g, cx, cy + h, rx, ry); g.fillStyle = '#111114'; g.fill();
+    g.fillRect(cx - rx, cy + h * 0.55, rx * 2, h * 0.45);
+    g.fillStyle = metal(g, cx - rx, 0, cx + rx, 0, on ? [0, 40, 80] : sp ? [0, 25, 45] : null);
+    ell(g, cx, cy + h * 0.55, rx, ry); g.fill();
+    g.fillRect(cx - rx, cy, rx * 2, h * 0.55);
+    // filo de color entre la banda y la base
+    g.strokeStyle = on ? SP : shade(color, -0.1); g.lineWidth = 3;
+    g.beginPath(); g.ellipse(cx, cy + h * 0.55, rx - 1, ry, 0, 0, PI); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 2;
     g.beginPath(); g.ellipse(cx, cy + h, rx, ry, 0, 0, PI); g.stroke();
+    // reflejo vertical en la banda
+    const rf = g.createLinearGradient(cx - rx, 0, cx + rx, 0);
+    rf.addColorStop(0.2, 'rgba(255,255,255,0)'); rf.addColorStop(0.3, 'rgba(255,255,255,0.45)'); rf.addColorStop(0.36, 'rgba(255,255,255,0)');
+    g.fillStyle = rf; g.fillRect(cx - rx, cy, rx * 2, h * 0.55);
     // cara superior
-    const base = sp ? '#e0f2fe' : color;
+    const base = on ? '#38bdf8' : sp ? '#e0f2fe' : color;
     const rg = g.createRadialGradient(cx - rx * 0.3, cy - ry * 0.5, 2, cx, cy, rx);
     rg.addColorStop(0, shade(base, 0.6)); rg.addColorStop(0.45, base); rg.addColorStop(1, shade(base, -0.5));
     ell(g, cx, cy, rx, ry); g.fillStyle = rg; g.fill();
-    g.lineWidth = sp ? 5 : 2.5; g.strokeStyle = sp ? color : shade(base, -0.65); g.stroke();
+    g.lineWidth = sp && !on ? 5 : 2.5; g.strokeStyle = sp && !on ? color : shade(base, -0.65); g.stroke();
+    // bisel claro en el borde de la cara
+    g.beginPath(); g.ellipse(cx, cy - 1, rx - 3, ry - 2, 0, PI * 1.05, PI * 1.95);
+    g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,0.5)'; g.stroke();
     if (type === 'tap') {
       ell(g, cx, cy, rx * 0.64, ry * 0.64); g.fillStyle = '#09090b'; g.fill();
       g.lineWidth = 3; g.strokeStyle = shade(base, 0.3); g.stroke();
@@ -68,7 +85,7 @@
 
   function openSprite(type, sp) {
     const c = mk(512, 80), g = c.getContext('2d');
-    const base = sp ? '#e0f2fe' : OPEN;
+    const base = sp === 'on' ? '#38bdf8' : sp ? '#e0f2fe' : OPEN;
     rrect(g, 6, 34, 500, 26, 13); g.fillStyle = 'rgba(0,0,0,0.5)'; g.fill();
     rrect(g, 6, 24, 500, 26, 13); g.fillStyle = metal(g, 0, 24, 0, 50, sp ? [0, 25, 45] : null); g.fill();
     const tg = g.createLinearGradient(0, 8, 0, 34);
@@ -133,6 +150,45 @@
     return c;
   }
 
+  // Tablero de madera repetible en vertical (dos copias apiladas para leer cualquier franja sin cortes).
+  const BOARD_H = 512, BOARD_SEC = 2; // alto del mosaico y segundos de canción que ocupa
+  function boardTexture() {
+    const W = 384, H = BOARD_H;
+    const c = mk(W, H * 2), g = c.getContext('2d');
+    const t = mk(W, H), tg = t.getContext('2d');
+    tg.fillStyle = '#2b1f16'; tg.fillRect(0, 0, W, H);
+    // vetas a lo largo del mástil
+    for (let i = 0; i < 100; i++) {
+      const x = Math.random() * W, w = 1 + Math.random() * 5;
+      tg.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,0.18)' : 'rgba(255,220,180,0.05)';
+      tg.fillRect(x, 0, w, H);
+    }
+    // bandas transversales suaves (periódicas en H) para que se note el avance
+    for (let y = 0; y < H; y++) {
+      const v = Math.sin((y / H) * PI * 2 * 3) * 0.5 + Math.sin((y / H) * PI * 2 * 7 + 1.3) * 0.3 + Math.sin((y / H) * PI * 2 * 13 + 0.4) * 0.2;
+      tg.fillStyle = v > 0 ? 'rgba(255,210,160,' + v * 0.07 + ')' : 'rgba(0,0,0,' + -v * 0.22 + ')';
+      tg.fillRect(0, y, W, 1);
+    }
+    // nudos y manchas (repetidos arriba y abajo para que el mosaico empalme)
+    for (let i = 0; i < 9; i++) {
+      const x = Math.random() * W, y = Math.random() * H, rx = 6 + Math.random() * 22, ry = rx * (0.5 + Math.random() * 0.6);
+      for (const oy of [-H, 0, H]) {
+        const rg = tg.createRadialGradient(x, y + oy, 1, x, y + oy, rx);
+        rg.addColorStop(0, 'rgba(0,0,0,0.45)'); rg.addColorStop(0.6, 'rgba(20,10,4,0.25)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+        ell(tg, x, y + oy, rx, ry); tg.fillStyle = rg; tg.fill();
+      }
+    }
+    // grano fino
+    const img = tg.getImageData(0, 0, W, H);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const n = (Math.random() - 0.5) * 18;
+      img.data[i] += n; img.data[i + 1] += n * 0.8; img.data[i + 2] += n * 0.6;
+    }
+    tg.putImageData(img, 0, 0);
+    g.drawImage(t, 0, 0); g.drawImage(t, 0, H);
+    return c;
+  }
+
   let SPRITES = null;
   function sprites() {
     if (SPRITES) return SPRITES;
@@ -140,15 +196,19 @@
     SPRITES = {
       gems: GH.LANE_COLORS.map((col) => {
         const o = {};
-        for (const t of types) { o[t] = gemSprite(col, t, false); o[t + 'Sp'] = gemSprite(col, t, true); }
+        for (const t of types) { o[t] = gemSprite(col, t, false); o[t + 'Sp'] = gemSprite(col, t, true); o[t + 'On'] = gemSprite(col, t, 'on'); }
         return o;
       }),
-      open: { strum: openSprite('strum', false), hopo: openSprite('hopo', false), strumSp: openSprite('strum', true), hopoSp: openSprite('hopo', true) },
+      open: {
+        strum: openSprite('strum', false), hopo: openSprite('hopo', false), strumSp: openSprite('strum', true), hopoSp: openSprite('hopo', true),
+        strumOn: openSprite('strum', 'on'), hopoOn: openSprite('hopo', 'on'),
+      },
       targets: GH.LANE_COLORS.map((col) => ({ up: targetSprite(col, false), down: targetSprite(col, true) })),
       flame: flameSprite(),
       glows: GH.LANE_COLORS.map(glowSprite),
       glowOpen: glowSprite(OPEN),
       glowSp: glowSprite(SP),
+      board: boardTexture(),
       noise: (() => {
         const c = mk(128, 128), g = c.getContext('2d');
         const img = g.createImageData(128, 128);
@@ -316,7 +376,8 @@
 
     buildHighway(dpr) {
       const gm = this.game, W = gm.W, H = gm.H;
-      const c = mk(W * dpr, H * dpr), g = c.getContext('2d');
+      const c = mk(W * dpr, H * dpr);
+      let g = c.getContext('2d');
       g.scale(dpr, dpr);
       const near = gm.proj(-0.4), far = gm.proj(gm.look);
       const poly = (w) => {
@@ -330,15 +391,16 @@
       // rieles cromados
       poly(1.09); g.fillStyle = metal(g, gm.cx - gm.halfW * 1.09, 0, gm.cx + gm.halfW * 1.09, 0); g.fill();
       poly(1.06); g.fillStyle = '#0a0806'; g.fill();
-      // tablero de madera oscura
+      this.highway = c;
+      // capa sobre el tablero (que se dibuja en cada cuadro porque se desplaza): oscurecido al fondo, viñeta y cuerdas
+      const o = mk(W * dpr, H * dpr);
+      g = o.getContext('2d');
+      g.scale(dpr, dpr);
       g.save();
       poly(1.04); g.clip();
-      const wood = g.createLinearGradient(0, far.y, 0, near.y);
-      wood.addColorStop(0, '#120d09'); wood.addColorStop(1, '#33251a');
-      g.fillStyle = wood; g.fillRect(0, 0, W, H);
-      g.globalAlpha = 0.35; g.globalCompositeOperation = 'overlay';
-      g.fillStyle = g.createPattern(this.sp.noise, 'repeat'); g.fillRect(0, 0, W, H);
-      g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+      const depth = g.createLinearGradient(0, far.y, 0, near.y);
+      depth.addColorStop(0, 'rgba(0,0,0,0.6)'); depth.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = depth; g.fillRect(0, 0, W, H);
       // viñeta lateral
       const vg = g.createLinearGradient(gm.cx - gm.halfW, 0, gm.cx + gm.halfW, 0);
       vg.addColorStop(0, 'rgba(0,0,0,0.55)'); vg.addColorStop(0.2, 'rgba(0,0,0,0)'); vg.addColorStop(0.8, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
@@ -355,7 +417,7 @@
         g.beginPath(); g.moveTo(xa - wa / 2, near.y); g.lineTo(xa + wa / 2, near.y); g.lineTo(xb + wb / 2, far.y); g.lineTo(xb - wb / 2, far.y); g.fill();
       }
       g.restore();
-      this.highway = c;
+      this.overlay = o;
       // niebla del fondo (se dibuja encima de las notas)
       const f = mk(W * dpr, H * dpr), fg = f.getContext('2d');
       fg.scale(dpr, dpr);
@@ -384,6 +446,8 @@
 
       g.drawImage(this.highway, 0, 0, W, H);
       const near = this.near, far = this.far;
+      this.drawBoard(g, t);
+      g.drawImage(this.overlay, 0, 0, W, H);
       if (gm.spActive) {
         g.save();
         g.globalCompositeOperation = 'lighter';
@@ -453,7 +517,7 @@
           pts.forEach((p, i) => (i ? g.lineTo(p[0] - p[2] / 2, p[1]) : g.moveTo(p[0] - p[2] / 2, p[1])));
           for (let i = pts.length - 1; i >= 0; i--) g.lineTo(pts[i][0] + pts[i][2] / 2, pts[i][1]);
           g.closePath();
-          g.fillStyle = !live ? 'rgba(82,82,91,0.7)' : sp ? SP : col;
+          g.fillStyle = !live ? 'rgba(82,82,91,0.7)' : sp || gm.spActive ? SP : col;
           g.fill();
           if (live) {
             g.save();
@@ -491,15 +555,16 @@
         let alpha = dt > fadeFrom ? Math.max(0, 1 - (dt - fadeFrom) / (gm.look - fadeFrom)) : 1;
         if (n.missed) alpha *= 0.35;
         g.globalAlpha = alpha;
+        const suf = gm.spActive ? 'On' : sp ? 'Sp' : '';
         if (n.open) {
-          const spr = S.open[(n.hopo ? 'hopo' : 'strum') + (sp ? 'Sp' : '')];
+          const spr = S.open[(n.hopo ? 'hopo' : 'strum') + suf];
           const w = gm.halfW * 1.9 * p.s, h = w * (80 / 512);
           g.drawImage(spr, gm.cx - w / 2, p.y - h * (21 / 80), w, h);
         } else {
           const type = n.tap ? 'tap' : n.hopo ? 'hopo' : 'strum';
-          const size = (n.hopo || n.tap ? 0.88 : 1) * rT * 2 * p.s;
+          const size = (n.hopo || n.tap ? 0.9 : 1) * rT * 2.15 * p.s;
           for (const l of n.lanes) {
-            const spr = S.gems[l][type + (sp ? 'Sp' : '')];
+            const spr = S.gems[l][type + suf];
             g.drawImage(spr, gm.laneX(l, p.s) - size / 2, p.y - size * (GCY / GW), size, size * (GHh / GW));
           }
         }
@@ -507,6 +572,12 @@
       }
 
       g.drawImage(this.fog, 0, 0, W, H);
+
+      // poder estelar: rayos en los rieles y destello al activarlo
+      if (gm.spActive && !this.spWas) this.spOnAt = now;
+      this.spWas = gm.spActive;
+      if (gm.spActive) this.drawLightning(g, now);
+      if (this.spOnAt && now - this.spOnAt < 700) this.drawSpFlash(g, (now - this.spOnAt) / 700, rT);
 
       // efectos de acierto y llamas
       g.save();
@@ -545,6 +616,73 @@
       g.restore();
 
       this.drawHUD(g, t, now);
+    }
+
+    // Tablero de madera que avanza con la canción: franjas horizontales recortadas a la autopista,
+    // cada una con su trozo de textura según el tiempo que representa.
+    drawBoard(g, t) {
+      const gm = this.game, tex = this.sp.board;
+      const tps = BOARD_H / BOARD_SEC;
+      const near = this.near, hwNear = gm.halfW * 1.04 * near.s;
+      g.save();
+      g.beginPath();
+      g.moveTo(gm.cx - hwNear, near.y); g.lineTo(gm.cx + hwNear, near.y);
+      g.lineTo(gm.cx + gm.halfW * 1.04 * this.far.s, this.far.y); g.lineTo(gm.cx - gm.halfW * 1.04 * this.far.s, this.far.y);
+      g.closePath(); g.clip();
+      // franjas de igual alto en pantalla; s es la escala de perspectiva y dt el tiempo que le corresponde
+      const N = 44, sN = near.s, sF = this.far.s;
+      const dtOf = (sc) => (1 / sc - 1) * gm.look / (1 / gm.farS - 1);
+      g.imageSmoothingQuality = 'high';
+      for (let k = 0; k < N; k++) {
+        const sA = sN + (sF - sN) * (k / N), sB = sN + (sF - sN) * ((k + 1) / N);
+        const dtA = dtOf(sA), dtB = dtOf(sB);
+        const yA = gm.horizonY + (gm.hitY - gm.horizonY) * sA, yB = gm.horizonY + (gm.hitY - gm.horizonY) * sB;
+        let sy = (-(t + dtB) * tps) % BOARD_H;
+        if (sy < 0) sy += BOARD_H;
+        const hw = gm.halfW * 1.04 * sA;
+        g.drawImage(tex, 0, sy, tex.width, (dtB - dtA) * tps, gm.cx - hw, yB - 0.5, hw * 2, yA - yB + 1);
+      }
+      g.restore();
+    }
+
+    drawLightning(g, now) {
+      const gm = this.game, near = this.near, far = this.far;
+      const seed = Math.floor(now / 55);
+      let r = seed * 9301 + 49297;
+      const rnd = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      g.lineJoin = 'round';
+      for (const side of [-1, 1]) {
+        const pts = [];
+        const steps = 18;
+        for (let k = 0; k <= steps; k++) {
+          const f = k / steps;
+          const s = near.s + (far.s - near.s) * f, y = near.y + (far.y - near.y) * f;
+          const jit = k === 0 || k === steps ? 0 : (rnd() - 0.5) * gm.halfW * 0.09 * s;
+          pts.push([gm.cx + side * gm.halfW * 1.075 * s + jit, y]);
+        }
+        for (const [w, col] of [[9, 'rgba(56,189,248,0.25)'], [4, 'rgba(125,211,252,0.7)'], [1.6, 'rgba(255,255,255,0.95)']]) {
+          g.lineWidth = w; g.strokeStyle = col;
+          g.beginPath();
+          pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
+          g.stroke();
+        }
+      }
+      g.restore();
+    }
+
+    drawSpFlash(g, k, rT) {
+      const gm = this.game;
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      g.globalAlpha = (1 - k) * 0.45;
+      g.fillStyle = SP; g.fillRect(0, 0, gm.W, gm.H);
+      g.globalAlpha = 1 - k;
+      g.lineWidth = rT * 0.5 * (1 - k) + 2; g.strokeStyle = '#e0f2fe';
+      ell(g, gm.cx, gm.hitY, gm.halfW * (0.3 + k * 1.6), gm.halfW * (0.08 + k * 0.4));
+      g.stroke();
+      g.restore();
     }
 
     // chispas que saltan del objetivo al acertar; más con mayor multiplicador, celestes con poder estelar

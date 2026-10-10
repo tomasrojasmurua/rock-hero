@@ -2,6 +2,7 @@
 // o los modelos .glb que el jugador importe para cada puesto.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const GH = window.GH;
 
@@ -161,6 +162,34 @@ function makeAmp(w, h) {
   return a;
 }
 
+// ---------- público ----------
+// Silueta de una persona (una sola geometría para instanciar): cuerpo, cabeza y brazos arriba o abajo.
+function crowdGeometry(armsUp) {
+  const parts = [];
+  const body = new THREE.CylinderGeometry(0.2, 0.24, 0.9, 8); body.translate(0, 0.45, 0); parts.push(body);
+  const head = new THREE.SphereGeometry(0.15, 10, 8); head.translate(0, 1.05, 0); parts.push(head);
+  for (const side of [-1, 1]) {
+    const arm = new THREE.CylinderGeometry(0.05, 0.05, 0.6, 6);
+    arm.translate(0, 0.3, 0);
+    if (armsUp) arm.rotateZ(-side * 0.35);
+    else arm.rotateZ(Math.PI - side * 0.25);
+    arm.translate(side * 0.2, 0.82, 0);
+    parts.push(arm);
+  }
+  return mergeGeometries(parts);
+}
+
+const poolTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const rg = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  rg.addColorStop(0, 'rgba(255,255,255,1)'); rg.addColorStop(0.5, 'rgba(255,255,255,0.45)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const poolGeo = new THREE.CircleGeometry(1.3, 24);
+
 // ---------- escenario ----------
 class Stage3D {
   constructor(canvas) {
@@ -175,6 +204,7 @@ class Stage3D {
     this.models = {}; // rol -> {scene, animations} importado
     this.parsed = {}; // rol -> gltf ya decodificado
     this.buildStage();
+    this.buildCrowd();
     this.band = {};
     this.compact = false;
     this.setBand({});
@@ -182,7 +212,8 @@ class Stage3D {
 
   buildStage() {
     const s = this.scene;
-    s.add(new THREE.HemisphereLight(0x9a8cff, 0x1a0a2a, 1.1));
+    this.hemi = new THREE.HemisphereLight(0x9a8cff, 0x1a0a2a, 1.1);
+    s.add(this.hemi);
     const key = new THREE.DirectionalLight(0xffe8d0, 2.0);
     key.position.set(2, 6, 8);
     s.add(key);
@@ -196,17 +227,24 @@ class Stage3D {
     part(new THREE.PlaneGeometry(60, 40), toon(0x07050c), s, [0, -0.5, 8], [-Math.PI / 2, 0, 0]);
     part(new THREE.BoxGeometry(2.6, 0.55, 2.2), toon(0x221d2e), s, [0.3, 0.275, -2.6]);
     // pantalla de LED
+    // Pantalla de LED: fondo y rejilla fijos; encima, ecualizador y destellos que se redibujan al ritmo
     const c = document.createElement('canvas');
     c.width = 512; c.height = 256;
-    const g = c.getContext('2d');
-    const rg = g.createRadialGradient(256, 128, 10, 256, 128, 300);
+    const bg = document.createElement('canvas');
+    bg.width = 512; bg.height = 256;
+    const bgc = bg.getContext('2d');
+    const rg = bgc.createRadialGradient(256, 128, 10, 256, 128, 300);
     rg.addColorStop(0, '#7c3aed'); rg.addColorStop(0.6, '#3b0764'); rg.addColorStop(1, '#12051f');
-    g.fillStyle = rg; g.fillRect(0, 0, 512, 256);
-    g.fillStyle = 'rgba(0,0,0,0.55)';
-    for (let x = 0; x < 512; x += 8) g.fillRect(x, 0, 2, 256);
-    for (let y = 0; y < 256; y += 8) g.fillRect(0, y, 512, 2);
+    bgc.fillStyle = rg; bgc.fillRect(0, 0, 512, 256);
+    const grid = document.createElement('canvas');
+    grid.width = 512; grid.height = 256;
+    const gc = grid.getContext('2d');
+    gc.fillStyle = 'rgba(0,0,0,0.55)';
+    for (let x = 0; x < 512; x += 8) gc.fillRect(x, 0, 2, 256);
+    for (let y = 0; y < 256; y += 8) gc.fillRect(0, y, 512, 2);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
+    this.led = { canvas: c, ctx: c.getContext('2d'), bg, grid, tex, last: 0, bars: new Float32Array(32) };
     this.wallMat = new THREE.MeshBasicMaterial({ map: tex, color: 0x999999 });
     part(new THREE.PlaneGeometry(11, 5), this.wallMat, s, [0, 2.6, -4.3]);
     // amplificadores
@@ -235,7 +273,68 @@ class Stage3D {
       this.beams.push(beam);
       const bulb = part(new THREE.SphereGeometry(0.13, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }), s, [beam.position.x, 5.4, -0.5]);
       bulb.userData.beam = beam;
+      // charco de luz donde el haz toca el suelo
+      const pool = new THREE.Mesh(poolGeo, new THREE.MeshBasicMaterial({
+        map: poolTex, color: 0xa855f7, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      pool.rotation.x = -Math.PI / 2;
+      s.add(pool);
+      beam.userData.pool = pool;
     }
+  }
+
+  buildCrowd() {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false });
+    const N = 34;
+    this.crowd = new THREE.Group();
+    this.crowdPeople = [];
+    const meshes = [true, false].map((up) => {
+      const m = new THREE.InstancedMesh(crowdGeometry(up), mat, N);
+      m.frustumCulled = false;
+      this.crowd.add(m);
+      return m;
+    });
+    const col = new THREE.Color();
+    const count = [0, 0];
+    for (let i = 0; i < N * 2; i++) {
+      const up = Math.random() < 0.45 ? 0 : 1;
+      if (count[up] >= N) continue;
+      const row = i % 3;
+      const person = {
+        mesh: meshes[up], idx: count[up]++,
+        x: (Math.random() * 2 - 1), z: -row * 0.55 + Math.random() * 0.2, row,
+        ph: Math.random() * Math.PI * 2, s: 0.9 + Math.random() * 0.25, jump: 0.5 + Math.random() * 0.5,
+      };
+      col.setHSL(0.72 + Math.random() * 0.06, 0.4, 0.07 + row * 0.03 + Math.random() * 0.03, THREE.SRGBColorSpace);
+      person.mesh.setColorAt(person.idx, col);
+      this.crowdPeople.push(person);
+    }
+    meshes.forEach((m, k) => { m.count = count[k]; if (m.instanceColor) m.instanceColor.needsUpdate = true; });
+    this.scene.add(this.crowd);
+    this.crowdDummy = new THREE.Object3D();
+  }
+
+  // Coloca al público justo delante de la cámara, con las cabezas asomando por la parte baja de la imagen.
+  placeCrowd() {
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    const depth = 3.2;
+    const z = cam.position.z - depth;
+    const at = (ndcX, ndcY) => {
+      const v = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(cam);
+      const dir = v.sub(cam.position).normalize();
+      const k = (z - cam.position.z) / dir.z;
+      return cam.position.clone().add(dir.multiplyScalar(k));
+    };
+    const headY = this.compact ? -0.45 : -0.5; // altura en pantalla (NDC) de las cabezas de la fila delantera
+    const p = at(0, headY);
+    const edge = at(1, headY);
+    // cada persona ocupa cerca de una quinta parte del alto de la imagen
+    const viewH = 2 * depth * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+    const k = (viewH * 0.2) / 1.2;
+    this.crowd.scale.setScalar(k);
+    this.crowd.position.set(0, p.y - 1.1 * k, z);
+    this.crowdHalfW = (Math.abs(edge.x) * 1.1) / k;
   }
 
   // models: {rol: ArrayBuffer} de archivos .glb importados
@@ -360,6 +459,7 @@ class Stage3D {
     const sy = (1 - (p.y + 1) / 2);
     cam.setViewOffset(W, H, 0, (sy - targetY) * H, W, H);
     cam.updateProjectionMatrix();
+    this.placeCrowd();
   }
 
   update(t, game) {
@@ -373,17 +473,30 @@ class Stage3D {
     const playerRole = PLAYER_ROLE[game.play.instrument] || 'lead';
     const sp = game.spActive;
 
-    // luces
+    // luces: laten en cada pulso, más fuerte en el primero del compás y con el medidor de rock alto
     const pulse = Math.max(0, 1 - (beats % 1) * 3);
+    const bar = playing && Math.floor(beats) % 4 === 0 ? pulse : 0;
+    const down = new THREE.Vector3();
     for (const b of this.beams) {
       const ph = b.userData.ph;
       b.rotation.z = Math.sin(now * 0.7 + ph) * 0.45;
       b.rotation.x = Math.cos(now * 0.5 + ph) * 0.2;
-      b.material.color.setHex(sp ? 0x38bdf8 : b.userData.green ? 0x4ade80 : 0xa855f7);
-      b.material.opacity = (0.05 + 0.07 * energy) * (1 + pulse * 0.5);
+      const hex = sp ? 0x38bdf8 : b.userData.green ? 0x4ade80 : 0xa855f7;
+      b.material.color.setHex(hex);
+      b.material.opacity = (0.05 + 0.08 * energy) * (1 + pulse * 0.9 + bar * 0.8);
+      // el charco sigue al haz: punto donde su eje corta el suelo
+      down.set(0, -1, 0).applyEuler(b.rotation);
+      const k = b.position.y / Math.max(0.2, -down.y);
+      const pool = b.userData.pool;
+      pool.position.set(b.position.x + down.x * k, 0.01, b.position.z + down.z * k);
+      pool.material.color.setHex(hex);
+      pool.material.opacity = (0.25 + 0.35 * energy) * (0.7 + pulse * 0.6);
     }
+    this.hemi.intensity = 1.0 + (0.25 * pulse + 0.35 * bar) * energy + (sp ? 0.3 : 0);
     const wall = 0.45 + 0.35 * pulse * energy + (sp ? 0.2 : 0);
     this.wallMat.color.setRGB(sp ? wall * 0.6 : wall, sp ? wall * 0.9 : wall * 0.8, wall);
+    this.drawLed(now, pulse, energy, sp, playing);
+    this.moveCrowd(beats, energy, playing, now);
 
     for (const [role, e] of Object.entries(this.band)) {
       const isPlayer = role === playerRole;
@@ -404,6 +517,44 @@ class Stage3D {
       if (f) f.shirt.emissive.setHex(this._sp ? 0x0e7490 : 0x000000);
     }
     this.renderer.render(this.scene, this.camera);
+  }
+
+  drawLed(now, pulse, energy, sp, playing) {
+    const L = this.led;
+    if (now - L.last < 1 / 30) return;
+    L.last = now;
+    const g = L.ctx;
+    g.drawImage(L.bg, 0, 0);
+    // ecualizador: barras que saltan con el pulso y caen suave
+    const n = L.bars.length, w = 512 / n;
+    for (let i = 0; i < n; i++) {
+      const target = playing ? (0.25 + 0.75 * energy) * pulse * (0.4 + 0.6 * Math.abs(Math.sin(i * 1.7 + now * 3.1))) : 0.08;
+      L.bars[i] = Math.max(target, L.bars[i] * 0.88);
+      const h = L.bars[i] * 220;
+      const grd = g.createLinearGradient(0, 256, 0, 256 - h);
+      if (sp) { grd.addColorStop(0, '#0e7490'); grd.addColorStop(1, '#e0f2fe'); }
+      else { grd.addColorStop(0, '#7c3aed'); grd.addColorStop(0.7, '#e879f9'); grd.addColorStop(1, '#4ade80'); }
+      g.fillStyle = grd;
+      g.fillRect(i * w + 2, 256 - h, w - 4, h);
+    }
+    if (pulse > 0.6 && playing) { g.fillStyle = 'rgba(255,255,255,' + (pulse - 0.6) * 0.4 + ')'; g.fillRect(0, 0, 512, 256); }
+    g.drawImage(L.grid, 0, 0);
+    L.tex.needsUpdate = true;
+  }
+
+  moveCrowd(beats, energy, playing, now) {
+    const d = this.crowdDummy, half = this.crowdHalfW || 3;
+    const touched = new Set();
+    for (const p of this.crowdPeople) {
+      const hop = playing ? Math.pow(Math.abs(Math.sin(beats * Math.PI + p.ph * 0.15)), 2) * 0.18 * p.jump * energy : Math.sin(now * 1.2 + p.ph) * 0.02;
+      d.position.set(p.x * half, hop + p.row * 0.12, p.z);
+      d.rotation.set(0, 0, playing ? Math.sin(beats * Math.PI * 0.5 + p.ph) * 0.08 * energy : 0);
+      d.scale.setScalar(p.s);
+      d.updateMatrix();
+      p.mesh.setMatrixAt(p.idx, d.matrix);
+      touched.add(p.mesh);
+    }
+    for (const m of touched) m.instanceMatrix.needsUpdate = true;
   }
 
   animate(role, f, beats, active, energy, glow, now) {
