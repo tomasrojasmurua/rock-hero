@@ -206,6 +206,7 @@
   }
 
   async function startGame() {
+    if (performance.now() < startLockUntil) return;
     const { song, inst, diff } = current;
     rememberChoice(inst, diff);
     audio.unlock(); // dentro del gesto del usuario
@@ -293,11 +294,20 @@
     return v;
   }
 
+  // Tras Salir no se permite arrancar otra partida durante un momento (evita toques fantasma que reinician la canción).
+  let startLockUntil = 0, entering = false;
   async function enterGame(playable) {
+    if (entering || performance.now() < startLockUntil) return;
+    entering = true;
+    try { await enterGameNow(playable); } finally { entering = false; }
+  }
+  async function enterGameNow(playable) {
     screen('game');
     goFullscreen();
     if (game) game.destroy();
     const stage3d = await prepareStage3D();
+    if (performance.now() < startLockUntil) { screen('menu'); return; }
+    if (game) game.destroy();
     game = new GH.Game({
       canvas: $('canvas'), audio, settings, playable, stage3d,
       onEnd: finish,
@@ -322,22 +332,30 @@
   function pauseGame() {
     if (!game || game.finished) return;
     game.pause();
+    pausedAt = performance.now();
     show('pause');
   }
+  let pausedAt = 0;
+  // Ignora toques en los botones de la pausa justo después de abrirla (evita pulsaciones fantasma).
+  const pauseGuard = (fn) => (e) => { if (performance.now() - pausedAt < 350) return; fn(e); };
   function resumeGame() {
     hide('pause');
     if (game) game.resume();
   }
   function quitGame() {
     hide('pause'); hide('results');
-    if (mp.inRound) {
-      if (game && !game.finished) room.send({ t: 'final', id: room.myId, score: Math.round(game.score), quit: true });
-      endRound();
-      if (room) { if (game) { game.destroy(); game = null; } releaseWakeLock(); exitFullscreen(); screen('menu'); refresh(); showRoom(); return; }
-    }
-    if (game) { game.destroy(); game = null; }
-    releaseWakeLock();
-    exitFullscreen();
+    startLockUntil = performance.now() + 1200;
+    const g = game, wasRound = mp.inRound;
+    try { audio.stop(); } catch (e) { /* nada */ }
+    try {
+      if (mp.inRound) {
+        if (g && !g.finished) room.send({ t: 'final', id: room.myId, score: Math.round(g.score), quit: true });
+        endRound();
+      }
+    } catch (e) { console.error(e); }
+    try { if (g) { g.destroy(); game = null; } } catch (e) { console.error(e); game = null; }
+    try { releaseWakeLock(); exitFullscreen(); } catch (e) { /* nada */ }
+    if (room && wasRound) { screen('menu'); refresh(); showRoom(); return; }
     screen('menu');
     refresh();
   }
@@ -840,6 +858,27 @@
     $('paper').scrollTop = 0;
   }
 
+  function openTouchDiag() {
+    const root = $('touch-diag'), rows = $('td-rows'), info = $('td-info'), dot = $('td-dot');
+    rows.innerHTML = '';
+    for (let y = 0; y < innerHeight; y += 100) { const b = document.createElement('b'); b.style.top = y + 2 + 'px'; b.textContent = 'y=' + y; rows.appendChild(b); }
+    const vv = window.visualViewport;
+    const show = (e) => {
+      if (e) { dot.style.display = 'block'; dot.style.left = e.clientX + 'px'; dot.style.top = e.clientY + 'px'; }
+      info.textContent = 'Toca la pantalla: el círculo debe quedar justo bajo tu dedo.\n' +
+        (e ? 'clientX/Y: ' + Math.round(e.clientX) + ' / ' + Math.round(e.clientY) + '\n' : '') +
+        'innerW/H: ' + innerWidth + ' / ' + innerHeight + '\n' +
+        'scrollX/Y: ' + Math.round(scrollX) + ' / ' + Math.round(scrollY) + '\n' +
+        (vv ? 'visualViewport offsetTop/pageTop/scale/height: ' + [vv.offsetTop, vv.pageTop, vv.scale, vv.height].map((n) => +n.toFixed(1)).join(' / ') + '\n' : '') +
+        'screen: ' + window.screen.width + 'x' + window.screen.height + ' dpr ' + devicePixelRatio + '\n' +
+        '--safe-top: ' + getComputedStyle(document.documentElement).getPropertyValue('--safe-top');
+    };
+    root.onpointerdown = root.onpointermove = (e) => { if (e.target.id !== 'td-close') show(e); };
+    dot.style.display = 'none';
+    show(null);
+    root.hidden = false;
+  }
+
   function init() {
     safeTop();
     window.addEventListener('resize', safeTop);
@@ -887,15 +926,21 @@
       b.onclick = pauseGame;
     }
     $('btn-sp').onclick = () => game && game.activateSP();
-    $('p-resume').onclick = resumeGame;
-    $('p-restart').onclick = () => { hide('pause'); game.paused = false; audio.resume().then(() => game.restart()); };
-    $('p-quit').onclick = quitGame;
+    $('p-resume').onclick = pauseGuard(resumeGame);
+    $('p-restart').onclick = pauseGuard(() => { if (performance.now() < startLockUntil) return; hide('pause'); game.paused = false; audio.resume().then(() => game.restart()); });
+    $('p-quit').onclick = pauseGuard(quitGame);
     $('r-again').onclick = () => { hide('results'); audio.unlock(); enterGame(game.play); };
     $('r-menu').onclick = quitGame;
     bindRoom();
     $('btn-settings').onclick = () => { bindSettings(); renderBandList(); show('settings'); };
     $('s-close').onclick = () => hide('settings');
     $('s-calibrate').onclick = startCalibration;
+    $('s-touchdiag').onclick = openTouchDiag;
+    $('td-close').onclick = () => { $('touch-diag').hidden = true; };
+    // La página nunca debe desplazarse: en iPhone un desplazamiento invisible descuadra los toques.
+    const unscroll = () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); };
+    window.addEventListener('scroll', unscroll, { passive: true });
+    if (window.visualViewport) window.visualViewport.addEventListener('scroll', unscroll);
     $('calib-pad').addEventListener('pointerdown', calibTap);
     $('calib-cancel').onclick = () => endCalibration(true);
     document.addEventListener('visibilitychange', () => { if (document.hidden && game && game.running) pauseGame(); });
