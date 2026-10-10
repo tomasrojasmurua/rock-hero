@@ -135,6 +135,8 @@
           report('Leyendo ' + f.name + '…');
           const sng = await readSng(f);
           songs.push(...(await collect(groupEntries(sng.entries.map((x) => ({ ...x, path: 'sng/' + x.path }))), sng.ini, f.name)));
+        } else if (/\.html?$/i.test(f.name)) {
+          errors.push(f.name + ': es una página web, no una canción. Descarga el .zip o .sng con el botón Descargar.');
         } else if (/\.(rar|7z)$/i.test(f.name)) {
           errors.push(f.name + ': formato no soportado, descomprímelo o usa .zip');
         } else {
