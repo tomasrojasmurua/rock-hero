@@ -323,7 +323,19 @@
     if (!files.length) return;
     loading('Leyendo archivos…');
     try {
-      const { songs: found, errors } = await GH.importFiles(files, loading);
+      const key = (s) => [s.artist, s.name, s.charter].map((x) => (x || '').toLowerCase().replace(/\s+/g, ' ').trim()).join('|');
+      const existing = await GH.store.listSongs();
+      const knownSrc = new Set(existing.map((s) => s.src).filter(Boolean));
+      const knownKeys = new Set(existing.map(key));
+      const res = await GH.importFiles(files, loading, { knownSrc });
+      const errors = res.errors;
+      let skipped = res.skipped;
+      const found = [];
+      for (const s of res.songs) {
+        if (knownKeys.has(key(s))) { skipped++; continue; }
+        knownKeys.add(key(s));
+        found.push(s);
+      }
       let saved = 0;
       for (const s of found) {
         loading('Guardando ' + s.name + '…');
@@ -333,7 +345,8 @@
       if (saved && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
       loading(null);
       await refresh();
-      let msg = saved ? 'Importadas ' + saved + ' canciones.' : 'No se encontró ninguna canción (hace falta notes.chart o notes.mid).';
+      let msg = saved ? 'Importadas ' + saved + ' canciones nuevas.' : (skipped ? 'No hay canciones nuevas.' : 'No se encontró ninguna canción (hace falta notes.chart o notes.mid).');
+      if (skipped) msg += ' Omitidas ' + skipped + ' que ya estaban.';
       if (errors.length) msg += '\n' + errors.slice(0, 4).join('\n') + (errors.length > 4 ? '\n…y ' + (errors.length - 4) + ' más' : '');
       toast(msg, errors.length ? 9000 : 4000);
     } catch (e) {

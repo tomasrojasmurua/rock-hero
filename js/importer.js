@@ -114,14 +114,18 @@
   }
 
   // Recibe File[] (de un input de carpeta o de archivos) y devuelve canciones listas para guardar.
-  GH.importFiles = async function (files, onProgress) {
+  GH.importFiles = async function (files, onProgress, opts) {
+    const known = (opts && opts.knownSrc) || new Set();
+    let skipped = 0;
     const loose = []; // {path, blob()}
     const songs = [];
     const errors = [];
     const report = (msg) => onProgress && onProgress(msg);
     for (const f of files) {
       const path = (f.webkitRelativePath || f.name).replace(/\\/g, '/');
+      const src = f.name + ':' + f.size;
       try {
+        if (/\.(zip|sng)$/i.test(f.name) && known.has(src)) { skipped++; continue; }
         if (/\.zip$/i.test(f.name)) {
           report('Leyendo ' + f.name + '…');
           for (const e of await readZip(f)) {
@@ -134,7 +138,9 @@
         } else if (/\.sng$/i.test(f.name)) {
           report('Leyendo ' + f.name + '…');
           const sng = await readSng(f);
-          songs.push(...(await collect(groupEntries(sng.entries.map((x) => ({ ...x, path: 'sng/' + x.path }))), sng.ini, f.name)));
+          const got = await collect(groupEntries(sng.entries.map((x) => ({ ...x, path: 'sng/' + x.path }))), sng.ini, f.name);
+          got.forEach((g) => { g.src = src; });
+          songs.push(...got);
         } else if (/\.html?$/i.test(f.name)) {
           errors.push(f.name + ': es una página web, no una canción. Descarga el .zip o .sng con el botón Descargar.');
         } else if (/\.(rar|7z)$/i.test(f.name)) {
@@ -192,7 +198,7 @@
       }
       return out;
     }
-    return { songs, errors };
+    return { songs, errors, skipped };
   };
 
   function groupEntries(entries) {

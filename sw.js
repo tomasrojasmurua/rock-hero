@@ -1,5 +1,5 @@
 // Service worker: guarda la app para jugar sin conexión.
-const CACHE = 'trastes-v4';
+const CACHE = 'trastes-v5';
 const ASSETS = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
