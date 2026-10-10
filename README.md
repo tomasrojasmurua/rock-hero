@@ -41,6 +41,6 @@ El workflow `.github/workflows/pages.yml` publica la app en cada push a `main`, 
 
 ## Banda en 3D
 
-`js/stage3d.js` dibuja con Three.js (en `vendor/three`, licencia MIT) un escenario con cinco puestos: voz, guitarra solista, guitarra rítmica, bajo y batería. Por defecto usa músicos provisionales hechos con primitivas y animados al tempo de la canción; el músico que controla el jugador deja de tocar cuando falla.
+`js/stage3d.js` dibuja con Three.js (en `vendor/three`, licencia MIT) un escenario con cinco puestos: voz, guitarra solista, guitarra rítmica, bajo y batería. Por defecto usa músicos provisionales hechos con primitivas y animados al tempo de la canción: los brazos alcanzan el mástil, el micrófono o cada tambor (cinemática inversa), el baterista toca charles, caja, bombo, platillos y redobles, y cada músico tiene su propio estilo de rebote, cabeceo y pasos. La banda reacciona al jugador: su músico se encoge al fallar (y deja de tocar si la canción trae su pista), salta al subir el multiplicador y, con poder estelar, levanta la guitarra mientras toda la banda salta y el público se viene arriba.
 
 En *Ajustes → Banda en 3D* se puede cargar un modelo `.glb` para cada puesto. Se escala solo a la altura correcta y, si trae animaciones, reproduce la que mejor encaje con el puesto (por ejemplo, una animación de Mixamo de tocar guitarra). Los modelos se guardan solo en el navegador del jugador, no en el repositorio.
