@@ -17,6 +17,7 @@
   function hide(id) { $(id).hidden = true; }
   function screen(id) {
     document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === id));
+    updatePill();
   }
   let toastTimer;
   function toast(msg, ms) {
@@ -116,7 +117,8 @@
     marquee($('d-name'), s.name);
     marquee($('d-artist'), [s.artist, s.album, s.year].filter(Boolean).join(' · '));
     marquee($('d-charter'), s.charter ? 'Chart: ' + s.charter : '');
-    $('d-delete').hidden = !!s.builtin;
+    $('d-delete').hidden = !!s.builtin || !!room;
+    $('d-play').textContent = !forRoom(s) ? '▶ Jugar' : room.isHost && !(mp.song && mp.song.meta.id === s.id) ? 'Elegir para la sala' : 'Listo';
     const cov = $('d-cover');
     cov.style.backgroundImage = '';
     cov.textContent = s.builtin ? '⭐' : '🎵';
@@ -161,41 +163,50 @@
   }
 
   // ---------- partida ----------
-  async function startGame() {
-    const { song, inst, diff } = current;
+  // Carga notas y audio de la canción y devuelve las notas jugables.
+  async function prepareSong(song, inst, diff) {
+    audio.setVolume(settings.volume);
+    audio.offset = settings.offsetMs / 1000;
+    let parsed;
+    if (song.builtin) {
+      loading('Preparando canción de ejemplo…');
+      parsed = GH.parseChart(GH.sampleChartText());
+      if (!sampleAudio) sampleAudio = await GH.renderSampleAudio(audio.ctx.sampleRate);
+      audio.setBuffers([sampleAudio.backing], [sampleAudio.lead]);
+    } else {
+      loading('Cargando ' + song.name + '…');
+      let files;
+      try { files = await GH.store.getFiles(song.id); }
+      catch (e) { throw new Error('No se pudo leer la canción guardada. Bórrala (Eliminar) e impórtala de nuevo.'); }
+      if (!files) throw new Error('No se encontraron los archivos de la canción');
+      try { parsed = await GH.parseSongFiles(files, song.ini); }
+      catch (e) { throw new Error('Archivo de notas ilegible: ' + (e.message || e) + '. Elimina e importa de nuevo.'); }
+      const delay = parseFloat(song.ini && song.ini.delay) || 0;
+      parsed.offset = (parsed.offset || 0) + delay / 1000;
+      await audio.loadStems(files, inst, loading);
+    }
+    const ini = song.ini || {};
+    const opts = {};
+    if (ini.hopo_frequency) opts.hopoThreshold = Math.round((parseFloat(ini.hopo_frequency) * parsed.resolution) / 480) || 0;
+    if (ini.eighthnote_hopo === '1' || ini.eighthnote_hopo === 'True') opts.eighthHopo = true;
+    const playable = GH.buildPlayable(parsed, inst, diff, opts);
+    loading(null);
+    return playable;
+  }
+
+  function rememberChoice(inst, diff) {
     settings.lastInst = inst;
     settings.lastDiff = diff;
     GH.settings.save(settings);
+  }
+
+  async function startGame() {
+    const { song, inst, diff } = current;
+    rememberChoice(inst, diff);
     audio.unlock(); // dentro del gesto del usuario
-    audio.setVolume(settings.volume);
-    audio.offset = settings.offsetMs / 1000;
     hide('detail');
     try {
-      let parsed;
-      if (song.builtin) {
-        loading('Preparando canción de ejemplo…');
-        parsed = GH.parseChart(GH.sampleChartText());
-        if (!sampleAudio) sampleAudio = await GH.renderSampleAudio(audio.ctx.sampleRate);
-        audio.setBuffers([sampleAudio.backing], [sampleAudio.lead]);
-      } else {
-        loading('Cargando ' + song.name + '…');
-        let files;
-        try { files = await GH.store.getFiles(song.id); }
-        catch (e) { throw new Error('No se pudo leer la canción guardada. Bórrala (Eliminar) e impórtala de nuevo.'); }
-        if (!files) throw new Error('No se encontraron los archivos de la canción');
-        try { parsed = await GH.parseSongFiles(files, song.ini); }
-        catch (e) { throw new Error('Archivo de notas ilegible: ' + (e.message || e) + '. Elimina e importa de nuevo.'); }
-        const delay = parseFloat(song.ini && song.ini.delay) || 0;
-        parsed.offset = (parsed.offset || 0) + delay / 1000;
-        await audio.loadStems(files, inst, loading);
-      }
-      const ini = song.ini || {};
-      const opts = {};
-      if (ini.hopo_frequency) opts.hopoThreshold = Math.round((parseFloat(ini.hopo_frequency) * parsed.resolution) / 480) || 0;
-      if (ini.eighthnote_hopo === '1' || ini.eighthnote_hopo === 'True') opts.eighthHopo = true;
-      const playable = GH.buildPlayable(parsed, inst, diff, opts);
-      loading(null);
-      enterGame(playable);
+      enterGame(await prepareSong(song, inst, diff));
     } catch (e) {
       loading(null);
       console.error(e);
@@ -273,6 +284,8 @@
       onPauseRequest: () => (game.paused ? resumeGame() : pauseGame()),
     });
     game.safeTop = 0;
+    $('mp-hud').hidden = !mp.inRound;
+    $('p-restart').hidden = mp.inRound;
     game.start();
     spLoop();
     requestWakeLock();
@@ -281,6 +294,7 @@
   function spLoop() {
     if (!game || !game.running) return;
     $('btn-sp').classList.toggle('ready', game.energy >= 0.5 && !game.spActive);
+    if (mp.inRound) roomTick();
     requestAnimationFrame(spLoop);
   }
 
@@ -295,6 +309,11 @@
   }
   function quitGame() {
     hide('pause'); hide('results');
+    if (mp.inRound) {
+      if (game && !game.finished) room.send({ t: 'final', id: room.myId, score: Math.round(game.score), quit: true });
+      endRound();
+      if (room) { if (game) { game.destroy(); game = null; } releaseWakeLock(); exitFullscreen(); screen('menu'); refresh(); showRoom(); return; }
+    }
     if (game) { game.destroy(); game = null; }
     releaseWakeLock();
     exitFullscreen();
@@ -304,6 +323,10 @@
 
   async function finish(r) {
     releaseWakeLock();
+    if (mp.inRound) roomFinish(r);
+    $('r-again').hidden = !!mp.inRound;
+    $('r-menu').textContent = mp.inRound ? 'Volver a la sala' : 'Biblioteca';
+    $('r-room').hidden = !mp.inRound;
     const key = scoreKey(current.song.id, current.inst, current.diff);
     const prev = scores[key];
     const isBest = !prev || r.score > prev.score;
@@ -449,6 +472,345 @@
     toast('Calibración guardada: ' + settings.offsetMs + ' ms');
   }
 
+
+  // ---------- multijugador ----------
+  let room = null;
+  // song: canción elegida en la sala ({meta, hash}); local: la misma canción en este teléfono;
+  // prepared: notas listas para empezar; scores: id -> {score, final}.
+  const mp = { song: null, local: null, prepared: null, inRound: false, scores: {}, lastSent: 0, lastHud: 0, lastPct: -1 };
+
+  // En una sala, el anfitrión elige cualquier canción; los invitados solo la de la sala.
+  function forRoom(s) {
+    return !!room && (room.isHost || (!!mp.local && mp.local.id === s.id));
+  }
+
+  function openRoomSheet(code) {
+    $('room-name').value = settings.playerName || '';
+    if (code) $('room-code').value = code;
+    showRoom();
+  }
+
+  function showRoom() {
+    $('room-start').hidden = !!room;
+    $('room-in').hidden = !room;
+    if (room) renderRoom();
+    show('room');
+    updatePill();
+  }
+  function hideRoom() { hide('room'); updatePill(); }
+
+  function updatePill() {
+    const pill = $('room-pill');
+    const inGame = $('game').classList.contains('active');
+    pill.hidden = !room || inGame || !$('room').hidden;
+    if (room) pill.textContent = '👥 Sala ' + room.code + ' · ' + room.players.length;
+  }
+
+  function saveName() {
+    const n = $('room-name').value.trim();
+    settings.playerName = n;
+    GH.settings.save(settings);
+    return n || 'Jugador';
+  }
+
+  async function createRoom() {
+    if (!G.Peer) { toast('No se pudo cargar el módulo de salas.'); return; }
+    const r = new GH.Room(saveName());
+    loading('Creando sala…');
+    try { await r.host(); }
+    catch (e) { loading(null); toast(e.message, 6000); return; }
+    loading(null);
+    setRoom(r);
+  }
+
+  async function joinRoom(code) {
+    code = (code || $('room-code').value).trim().toUpperCase();
+    if (!/^[A-Z0-9]{5}$/.test(code)) { toast('El código de sala tiene 5 letras o números.'); return; }
+    if (!G.Peer) { toast('No se pudo cargar el módulo de salas.'); return; }
+    audio.unlock();
+    const r = new GH.Room(saveName());
+    loading('Entrando a la sala ' + code + '…');
+    try { await r.join(code); }
+    catch (e) { loading(null); toast(e.message, 7000); return; }
+    loading(null);
+    setRoom(r);
+    toast('¡Entraste a la sala ' + code + '!');
+  }
+
+  function setRoom(r) {
+    room = r;
+    Object.assign(mp, { song: null, local: null, prepared: null, inRound: false, scores: {} });
+    r.on('players', () => { renderRoom(); updatePill(); })
+      .on('joined', (n) => toast(n + ' entró a la sala'))
+      .on('left', (n) => toast(n + ' salió de la sala'))
+      .on('warn', (m) => console.warn(m))
+      .on('closed', (m) => { toast(m, 6000); dropRoom(); })
+      .on('song', onRoomSong)
+      .on('progress', onRoomProgress)
+      .on('received', onRoomReceived)
+      .on('start', (m) => scheduleRound(m.in))
+      .on('score', (m) => { mp.scores[m.id] = { score: m.score, final: false }; })
+      .on('final', (m) => { mp.scores[m.id] = { score: m.score, final: true, quit: m.quit, acc: m.acc, stars: m.stars }; renderRank(); });
+    showRoom();
+  }
+
+  function leaveRoom() {
+    if (room) room.leave();
+    dropRoom();
+    hideRoom();
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  }
+
+  function dropRoom() {
+    room = null;
+    mp.inRound = false;
+    mp.song = mp.local = mp.prepared = null;
+    $('mp-hud').hidden = true;
+    if (!$('room').hidden) showRoom();
+    updatePill();
+  }
+
+  const STATE_TEXT = { lobby: 'esperando canción', choosing: 'eligiendo instrumento', loading: 'cargando…', ready: 'listo', playing: 'tocando', done: 'terminó' };
+  function stateText(p) {
+    if (p.state === 'downloading') return 'recibiendo canción ' + Math.round((p.pct || 0) * 100) + '%';
+    if (p.state === 'ready' && p.inst) return 'listo · ' + GH.INSTRUMENTS[p.inst] + ' ' + GH.DIFF_LABELS[p.diff];
+    return STATE_TEXT[p.state] || p.state || '';
+  }
+
+  function renderRoom() {
+    if (!room) return;
+    $('room-code-show').textContent = room.code;
+    $('room-share-row').hidden = !room.isHost;
+    const ul = $('room-players');
+    ul.innerHTML = '';
+    room.players.forEach((p, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<div class="who"><b></b><span class="tag"></span></div>';
+      li.querySelector('b').textContent = p.name + (i === 0 ? ' 👑' : '') + (p.id === room.myId ? ' (tú)' : '');
+      const tag = li.querySelector('.tag');
+      tag.textContent = stateText(p);
+      tag.classList.toggle('ok', p.state === 'ready');
+      ul.appendChild(li);
+    });
+    const meta = mp.song && mp.song.meta;
+    $('room-song').textContent = meta ? meta.name + (meta.artist ? ' · ' + meta.artist : '') : room.isHost ? 'Elige qué canción van a tocar.' : 'El anfitrión está eligiendo la canción.';
+    const pick = $('room-pick');
+    if (room.isHost) { pick.textContent = meta ? 'Cambiar canción' : 'Elegir canción'; pick.disabled = false; }
+    else { pick.textContent = mp.prepared ? 'Cambiar instrumento' : 'Elegir instrumento'; pick.disabled = !mp.local; }
+    const go = $('room-go');
+    go.hidden = !room.isHost;
+    const allReady = room.players.length > 1 && room.players.every((p) => p.state === 'ready');
+    go.disabled = !allReady || !mp.prepared;
+    go.textContent = room.players.length < 2 ? 'Esperando jugadores…' : allReady ? '¡Empezar!' : 'Esperando a que todos estén listos…';
+  }
+
+  function setMyState(state, extra) {
+    const me = room.players.find((p) => p.id === room.myId);
+    if (room.isHost) {
+      if (me) { Object.assign(me, { state, inst: undefined, diff: undefined, pct: undefined }, extra || {}); room._sendPlayers(); }
+    } else {
+      room.send(Object.assign({ t: 'state', state, inst: null, diff: null }, extra || {}));
+    }
+  }
+
+  function roomPick() {
+    if (!room) return;
+    if (room.isHost) { hideRoom(); openTab('setlist'); screen('menu'); refresh(); toast('Toca la canción que van a tocar.'); }
+    else if (mp.local) { hideRoom(); openDetail(mp.local); }
+  }
+
+  // "Listo" en la ficha: el anfitrión además elige la canción para todos.
+  async function roomReady() {
+    const { song, inst, diff } = current;
+    rememberChoice(inst, diff);
+    audio.unlock();
+    hide('detail');
+    if (room.isHost && !(mp.song && mp.song.meta.id === song.id)) {
+      loading('Preparando la canción para la sala…');
+      let files = null, hash = null;
+      try {
+        if (!song.builtin) { files = await GH.store.getFiles(song.id); hash = await GH.notesHash(files); }
+      } catch (e) { loading(null); toast('No se pudo leer la canción: ' + (e.message || e)); return; }
+      const { files: _f, ...meta } = song;
+      mp.song = { meta, hash };
+      mp.local = song;
+      mp.prepared = null;
+      room.setSong(mp.song, files);
+    }
+    setMyState('loading');
+    try { mp.prepared = await prepareSong(song, inst, diff); }
+    catch (e) { loading(null); toast('Error: ' + (e.message || e), 6000); setMyState('choosing'); return; }
+    await prepareStage3D();
+    mp.prepared.inst = inst;
+    setMyState('ready', { inst, diff });
+    showRoom();
+  }
+
+  async function onRoomSong(s) {
+    mp.song = s;
+    mp.local = null;
+    mp.prepared = null;
+    renderRoom();
+    const local = await findLocal(s);
+    if (mp.song !== s) return;
+    if (local) {
+      mp.local = local;
+      setMyState('choosing');
+      renderRoom();
+      roomPick();
+      toast('Canción elegida: ' + s.meta.name + '. Elige tu instrumento.');
+    } else {
+      mp.lastPct = -1;
+      setMyState('downloading', { pct: 0 });
+      room.send({ t: 'need' });
+      toast('Recibiendo ' + s.meta.name + ' del anfitrión…');
+    }
+  }
+
+  async function findLocal(s) {
+    if (s.meta.builtin) return GH.SAMPLE_SONG;
+    const list = await GH.store.listSongs().catch(() => []);
+    const byId = list.find((x) => x.id === s.meta.id);
+    if (byId) return byId;
+    const norm = (x) => [x.artist, x.name, x.charter].map((v) => (v || '').toLowerCase().replace(/\s+/g, ' ').trim()).join('|');
+    for (const cand of list.filter((x) => norm(x) === norm(s.meta))) {
+      if (!s.hash) return cand;
+      const files = await GH.store.getFiles(cand.id).catch(() => null);
+      if (files && (await GH.notesHash(files)) === s.hash) return cand;
+    }
+    return null;
+  }
+
+  function onRoomProgress(pct) {
+    const step = Math.floor(pct * 10);
+    if (step !== mp.lastPct) { mp.lastPct = step; setMyState('downloading', { pct }); }
+  }
+
+  async function onRoomReceived(song) {
+    if (!mp.song || song.id !== mp.song.meta.id) return;
+    try {
+      await GH.store.addSong(song);
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    } catch (e) { toast('No se pudo guardar la canción: ' + (e.message || e), 6000); return; }
+    const { files, ...meta } = song;
+    mp.local = meta;
+    setMyState('choosing');
+    refresh();
+    renderRoom();
+    toast('Canción recibida y guardada en tu biblioteca. Elige tu instrumento.');
+    roomPick();
+  }
+
+  async function roomStart() {
+    if (!room || !room.isHost || !mp.prepared) return;
+    $('room-go').disabled = true;
+    const lead = await room.startAll(1500);
+    scheduleRound(lead);
+  }
+
+  function scheduleRound(ms) {
+    if (!mp.prepared) { toast('Tu canción no estaba lista.'); return; }
+    hideRoom();
+    hide('detail');
+    mp.scores = {};
+    mp.inRound = true;
+    setTimeout(() => {
+      if (!room || !mp.prepared) return;
+      setMyState('playing');
+      const pl = mp.prepared;
+      mp.prepared = null;
+      enterGame(pl);
+    }, ms);
+  }
+
+  function roomTick() {
+    const now = performance.now();
+    if (now - mp.lastSent > 300 && room) {
+      mp.lastSent = now;
+      room.send({ t: 'score', id: room.myId, score: Math.round(game.score) });
+    }
+    if (now - mp.lastHud > 250) { mp.lastHud = now; renderHud(); }
+  }
+
+  function standings() {
+    if (!room) return [];
+    const rows = room.players.map((p) => {
+      const mine = p.id === room.myId;
+      const sc = mine ? { score: game ? Math.round(game.score) : 0, final: game && game.finished } : mp.scores[p.id] || { score: 0 };
+      return { name: p.name, me: mine, score: sc.score || 0, final: sc.final, quit: sc.quit };
+    });
+    return rows.sort((a, b) => b.score - a.score);
+  }
+
+  function renderHud() {
+    const ol = $('mp-hud');
+    ol.innerHTML = '';
+    for (const r of standings()) {
+      const li = document.createElement('li');
+      li.className = r.me ? 'me' : '';
+      li.innerHTML = '<span></span><b></b>';
+      li.firstChild.textContent = r.name;
+      li.lastChild.textContent = r.score.toLocaleString('es');
+      ol.appendChild(li);
+    }
+  }
+
+  function roomFinish(r) {
+    room && room.send({ t: 'final', id: room.myId, score: r.score, acc: r.accuracy, stars: r.stars });
+    setMyState('done');
+    renderRank();
+  }
+
+  function renderRank() {
+    const ol = $('r-room');
+    if (!room || ol.hidden && !mp.inRound) return;
+    const rows = standings();
+    ol.innerHTML = '';
+    const allDone = rows.every((r) => r.final || r.quit);
+    rows.forEach((r, i) => {
+      const li = document.createElement('li');
+      li.className = (r.me ? 'me ' : '') + (i === 0 && allDone ? 'win' : '');
+      li.innerHTML = '<span></span><b></b>';
+      li.firstChild.textContent = (i === 0 && allDone ? '🏆 ' : (i + 1) + '. ') + r.name;
+      li.lastChild.textContent = r.quit ? 'abandonó' : r.final ? r.score.toLocaleString('es') : 'tocando… ' + r.score.toLocaleString('es');
+      ol.appendChild(li);
+    });
+  }
+
+  function endRound() {
+    mp.inRound = false;
+    $('mp-hud').hidden = true;
+    if (room) { setMyState(mp.local ? 'choosing' : 'lobby'); }
+  }
+
+  function roomLinkText() {
+    return '¡Toca conmigo en Trastes! Entra a mi sala: ' + room.link;
+  }
+
+  function bindRoom() {
+    $('btn-multi').onclick = () => openRoomSheet();
+    $('room-create').onclick = createRoom;
+    $('room-join').onclick = () => joinRoom();
+    $('room-code').onkeydown = (e) => { if (e.key === 'Enter') joinRoom(); };
+    $('room-close').onclick = hideRoom;
+    $('room-hide').onclick = hideRoom;
+    $('room-leave').onclick = leaveRoom;
+    $('room-pill').onclick = showRoom;
+    $('room-pick').onclick = roomPick;
+    $('room-go').onclick = roomStart;
+    $('room-wa').onclick = () => { window.open('https://wa.me/?text=' + encodeURIComponent(roomLinkText()), '_blank'); };
+    $('room-copy').onclick = async () => {
+      try { await navigator.clipboard.writeText(room.link); toast('Link copiado.'); }
+      catch (e) { toast(room.link, 8000); }
+    };
+    const fromHash = () => {
+      const m = /sala=([A-Za-z0-9]{5})/.exec(location.hash);
+      if (m && !room) openRoomSheet(m[1].toUpperCase());
+    };
+    window.addEventListener('hashchange', fromHash);
+    fromHash();
+  }
+
   // ---------- arranque ----------
   function openTab(tab) {
     $('panel-setlist').hidden = tab !== 'setlist';
@@ -479,7 +841,7 @@
     $('search').oninput = renderList;
     $('d-close').onclick = () => hide('detail');
     $('detail').onclick = (e) => { if (e.target.id === 'detail') hide('detail'); };
-    $('d-play').onclick = startGame;
+    $('d-play').onclick = () => (forRoom(current.song) ? roomReady() : startGame());
     $('d-delete').onclick = async () => {
       const btn = $('d-delete');
       // Confirmación en dos toques (los diálogos nativos no siempre están disponibles).
@@ -502,6 +864,7 @@
     $('p-quit').onclick = quitGame;
     $('r-again').onclick = () => { hide('results'); audio.unlock(); enterGame(game.play); };
     $('r-menu').onclick = quitGame;
+    bindRoom();
     $('btn-settings').onclick = () => { bindSettings(); renderBandList(); show('settings'); };
     $('s-close').onclick = () => hide('settings');
     $('s-calibrate').onclick = startCalibration;

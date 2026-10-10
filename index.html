@@ -68,7 +68,7 @@
       <button class="hm hm1" data-go="setlist">Partida rápida</button>
       <button class="hm hm2" data-go="import">Importar canciones</button>
       <button class="hm hm3 soon" data-soon="Carrera">Carrera</button>
-      <button class="hm hm4 soon" data-soon="Multijugador">Multijugador</button>
+      <button class="hm hm4" id="btn-multi">Multijugador</button>
       <button class="hm hm5 soon" data-soon="Entrenamiento">Entrenamiento</button>
       <button class="hm hm6" id="btn-settings">Opciones</button>
     </nav>
@@ -112,6 +112,7 @@
     <canvas id="canvas"></canvas>
     <button id="btn-pause" class="hud-btn" aria-label="Pausa">❚❚</button>
     <button id="btn-sp" class="hud-btn sp" aria-label="Poder estelar">⚡</button>
+    <ol id="mp-hud" hidden></ol>
   </section>
 
   <!-- Detalle de canción -->
@@ -138,6 +139,43 @@
     </div>
   </div>
 
+  <!-- Multijugador -->
+  <div id="room" class="sheet" hidden>
+    <div class="sheet-card">
+      <h2>Multijugador</h2>
+      <div id="room-start">
+        <label class="field">Tu nombre
+          <input id="room-name" class="text-in" maxlength="20" autocomplete="nickname" placeholder="Jugador">
+        </label>
+        <button id="room-create" class="btn primary wide">Crear sala</button>
+        <div class="row">
+          <input id="room-code" class="text-in grow" placeholder="Código de sala" maxlength="5" autocapitalize="characters" autocomplete="off">
+          <button id="room-join" class="btn">Unirse</button>
+        </div>
+        <p class="muted small">Crea una sala y comparte el link por WhatsApp. Si alguien no tiene la canción, se le envía directo desde tu teléfono.</p>
+        <button id="room-close" class="btn wide">Cerrar</button>
+      </div>
+      <div id="room-in" hidden>
+        <p class="room-code">Sala <b id="room-code-show"></b></p>
+        <div class="row" id="room-share-row">
+          <button id="room-wa" class="btn primary grow">Invitar por WhatsApp</button>
+          <button id="room-copy" class="btn">Copiar link</button>
+        </div>
+        <h3>Jugadores</h3>
+        <ul id="room-players" class="band-list"></ul>
+        <h3>Canción</h3>
+        <p id="room-song" class="muted"></p>
+        <button id="room-pick" class="btn wide"></button>
+        <button id="room-go" class="btn primary wide">Empezar</button>
+        <div class="row">
+          <button id="room-leave" class="btn danger">Salir de la sala</button>
+          <button id="room-hide" class="btn grow">Ocultar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <button id="room-pill" hidden></button>
+
   <!-- Pausa -->
   <div id="pause" class="sheet" hidden>
     <div class="sheet-card center">
@@ -155,6 +193,7 @@
       <div id="r-stars" class="stars"></div>
       <div id="r-score" class="big-score"></div>
       <p id="r-best" class="muted small"></p>
+      <ol id="r-room" class="room-rank" hidden></ol>
       <div class="stats">
         <div><b id="r-acc"></b><span>aciertos</span></div>
         <div><b id="r-notes"></b><span>notas</span></div>
@@ -220,6 +259,8 @@
   <script src="js/render.js"></script>
   <script src="js/game.js"></script>
   <script src="js/sample.js"></script>
+  <script src="vendor/peerjs/peerjs.min.js"></script>
+  <script src="js/net.js"></script>
   <script src="js/app.js"></script>
   <script type="importmap">
     { "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
