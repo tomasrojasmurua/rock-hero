@@ -18,11 +18,11 @@ const SPOTS = {
   drums: { x: 0.3, z: -2.4, ry: 0, y: 0.55 },
 };
 const STYLES = {
-  vocals: { skin: 0xe8b796, shirt: 0x27272a, pants: 0x1e293b, hair: 0x2a1b12, hairStyle: 'long', shades: true },
-  lead: { skin: 0xd9a27e, shirt: 0x7f1d1d, pants: 0x18181b, hair: 0x101010, hairStyle: 'short', guitar: 0xb91c1c },
-  rhythm: { skin: 0xf0c4a4, shirt: 0xe7e5e4, pants: 0x27272a, hair: 0x3b2516, hairStyle: 'curly', guitar: 0xf5f5f0 },
-  bass: { skin: 0xe6b494, shirt: 0x334155, pants: 0x0f172a, hair: 0x2b1d14, hairStyle: 'mop', guitar: 0x111827, bass: true },
-  drums: { skin: 0xd8a07c, shirt: 0x0f172a, pants: 0x1f2937, hair: 0x1a1a1a, hairStyle: 'mop' },
+  vocals: { skin: 0xe8b796, shirt: 0x6b7280, jacket: 0x1c1917, pants: 0x1e293b, hair: 0x2a1b12, hairStyle: 'long', shades: true, shoe: 0x0c0a09 },
+  lead: { skin: 0xd9a27e, shirt: 0x7f1d1d, pants: 0x18181b, hair: 0x101010, hairStyle: 'short', guitar: 0xb91c1c, collar: true, shoe: 0x18181b, sole: 0xf4f4f5 },
+  rhythm: { skin: 0xf0c4a4, shirt: 0xe7e5e4, pants: 0x27272a, hair: 0x3b2516, hairStyle: 'curly', guitar: 0xf5f5f0, tie: 0x111111, collar: true, shoe: 0x7c2d12, sole: 0xe7e5e4 },
+  bass: { skin: 0xe6b494, shirt: 0x334155, pants: 0x0f172a, hair: 0x2b1d14, hairStyle: 'mop', guitar: 0x111827, bass: true, hoodie: true, shoe: 0x1f2937, sole: 0xf4f4f5 },
+  drums: { skin: 0xd8a07c, shirt: 0x0f172a, pants: 0x1f2937, hair: 0x1a1a1a, hairStyle: 'mop', stripe: 0xe5e7eb, shoe: 0x111111, sole: 0xe5e7eb },
 };
 const CLIP_HINT = { vocals: /sing|vocal|mic/i, lead: /guitar|play/i, rhythm: /guitar|play/i, bass: /bass|guitar|play/i, drums: /drum/i };
 
@@ -77,6 +77,16 @@ function jumpCrouch(st, now) {
 function blink(f, now, ph) {
   const v = frac(now / 3.3 + ph * 0.37) < 0.035 ? 0.15 : 1;
   for (const e of f.eyes) e.scale.y = v;
+}
+
+// Gestos de la cara: boca (abrir/estirar) y cejas (>0 preocupado, <0 concentrado).
+function expression(f, open, wide, brow) {
+  f.mouth.scale.set(1 + 0.4 * wide, 0.6 + 3.2 * open, 1);
+  f.mouth.position.y = 0.072 - 0.008 * open;
+  for (const b of f.brows) {
+    b.rotation.z = -b.userData.side * brow * 0.45;
+    b.position.y = 0.178 + 0.008 * Math.abs(brow);
+  }
 }
 
 // Carácter de cada músico: cuánto rebota, cabecea, se balancea, en qué pie lleva el ritmo…
@@ -148,28 +158,66 @@ function gesture(type, beats, A, hype, mic, torso, out) {
 
 // ---------- músico provisional ----------
 function makeFigure(st) {
-  const skin = toon(st.skin), shirt = new THREE.MeshToonMaterial({ color: st.shirt, gradientMap: gradTex });
-  const pants = toon(st.pants), hair = toon(st.hair), shoe = toon(0x111111);
+  // la prenda de arriba (chaqueta o camiseta) es material propio: brilla con el poder estelar
+  const top = new THREE.MeshToonMaterial({ color: st.jacket || st.shirt, gradientMap: gradTex });
+  const skin = toon(st.skin), shirt = toon(st.shirt);
+  const pants = toon(st.pants), hair = toon(st.hair), shoe = toon(st.shoe || 0x111111), sole = toon(st.sole || 0x0a0a0a);
   const root = new THREE.Group();
   const hips = pivot(root, 0, 0.95, 0);
   part(new THREE.BoxGeometry(0.34, 0.16, 0.2), pants, hips);
+  // cinturón con hebilla
+  part(new THREE.BoxGeometry(0.355, 0.035, 0.212), black, hips, [0, 0.07, 0]);
+  part(new THREE.BoxGeometry(0.045, 0.032, 0.01), chrome, hips, [0, 0.07, 0.108]).userData.noOutline = true;
   const leg = (side) => {
     const hip = pivot(hips, side * 0.1, -0.05, 0);
     part(new THREE.CapsuleGeometry(0.075, 0.3, 3, 8), pants, hip, [0, -0.22, 0]);
     const knee = pivot(hip, 0, -0.44, 0);
     part(new THREE.CapsuleGeometry(0.065, 0.3, 3, 8), pants, knee, [0, -0.21, 0]);
-    part(new THREE.BoxGeometry(0.11, 0.07, 0.25), shoe, knee, [0, -0.43, 0.05]);
+    // zapatilla: puntera redondeada y suela clara
+    part(new THREE.BoxGeometry(0.11, 0.065, 0.22), shoe, knee, [0, -0.425, 0.035]);
+    part(new THREE.SphereGeometry(0.055, 8, 6), shoe, knee, [0, -0.43, 0.14]).scale.set(1, 0.6, 0.8);
+    part(new THREE.BoxGeometry(0.118, 0.022, 0.27), sole, knee, [0, -0.46, 0.05]);
     return { hip, knee };
   };
   const legL = leg(1), legR = leg(-1);
   const torso = pivot(hips, 0, 0.06, 0);
-  part(new THREE.CapsuleGeometry(0.17, 0.28, 4, 10), shirt, torso, [0, 0.28, 0]).scale.set(1.15, 1, 0.72);
+  part(new THREE.CapsuleGeometry(0.17, 0.28, 4, 10), top, torso, [0, 0.28, 0]).scale.set(1.15, 1, 0.72);
+  const front = (geo, mat, pos, rot) => { const m = part(geo, mat, torso, pos, rot); m.userData.noOutline = true; return m; };
+  if (st.jacket) {
+    // chaqueta abierta: franja de la camiseta y solapas
+    front(new THREE.BoxGeometry(0.1, 0.4, 0.012), shirt, [0, 0.27, 0.12]);
+    for (const sd of [1, -1]) front(new THREE.BoxGeometry(0.035, 0.17, 0.014), toon(0x0c0a09), [sd * 0.062, 0.4, 0.122], [0, 0, sd * 0.32]);
+  }
+  if (st.collar) for (const sd of [1, -1]) front(new THREE.BoxGeometry(0.07, 0.035, 0.03), shirt, [sd * 0.045, 0.555, 0.07], [0.3, 0, sd * 0.45]);
+  if (st.tie) {
+    front(new THREE.BoxGeometry(0.035, 0.26, 0.01), toon(st.tie), [0, 0.38, 0.126]);
+    front(new THREE.BoxGeometry(0.04, 0.035, 0.018), toon(st.tie), [0, 0.525, 0.11]);
+  } else if (st.collar) {
+    for (let i = 0; i < 3; i++) front(new THREE.SphereGeometry(0.009, 6, 4), toon(0xf5f5f4), [0, 0.46 - i * 0.11, 0.124]);
+  }
+  if (st.hoodie) {
+    // capucha, bolsillo y cordones
+    part(new THREE.TorusGeometry(0.1, 0.04, 6, 14, Math.PI), top, torso, [0, 0.55, -0.05], [-0.5, 0, Math.PI]);
+    front(new THREE.BoxGeometry(0.2, 0.08, 0.012), toon(0x273449), [0, 0.12, 0.118]);
+    for (const sd of [1, -1]) front(new THREE.CylinderGeometry(0.006, 0.006, 0.12, 4), toon(0xe5e7eb), [sd * 0.03, 0.46, 0.124]);
+  }
+  if (st.stripe) {
+    const band = part(new THREE.CylinderGeometry(0.2, 0.2, 0.045, 18, 1, true), toon(st.stripe), torso, [0, 0.36, 0]);
+    band.scale.set(1, 1, 0.64);
+    band.userData.noOutline = true;
+  }
   const neck = pivot(torso, 0, 0.58, 0);
   part(new THREE.CylinderGeometry(0.05, 0.06, 0.08, 8), skin, neck, [0, 0.02, 0]);
   const head = pivot(neck, 0, 0.06, 0);
   part(new THREE.SphereGeometry(0.12, 16, 12), skin, head, [0, 0.12, 0]).scale.set(0.9, 1.08, 0.95);
-  const eyes = [0.04, -0.04].map((x) => part(new THREE.SphereGeometry(0.014, 6, 4), black, head, [x, 0.14, 0.105]));
-  if (st.shades) part(new THREE.BoxGeometry(0.2, 0.045, 0.03), black, head, [0, 0.145, 0.105]);
+  for (const sd of [1, -1]) part(new THREE.SphereGeometry(0.025, 6, 5), skin, head, [sd * 0.105, 0.12, 0]).scale.set(0.5, 1, 0.8); // orejas
+  const face = (geo, mat, pos) => { const m = part(geo, mat, head, pos); m.userData.noOutline = true; return m; };
+  const eyes = [0.04, -0.04].map((x) => face(new THREE.SphereGeometry(0.014, 6, 4), black, [x, 0.14, 0.105]));
+  face(new THREE.SphereGeometry(0.017, 6, 5), skin, [0, 0.115, 0.112]).scale.set(0.8, 1, 1); // nariz
+  const mouth = face(new THREE.BoxGeometry(0.05, 0.016, 0.012), toon(0x3f0d0d), [0, 0.072, 0.103]);
+  const brows = [1, -1].map((sd) => face(new THREE.BoxGeometry(0.045, 0.012, 0.012), hair, [sd * 0.043, 0.178, 0.1]));
+  brows.forEach((b, i) => { b.userData.side = i ? -1 : 1; });
+  if (st.shades) face(new THREE.BoxGeometry(0.2, 0.045, 0.03), black, [0, 0.145, 0.105]);
   // pelo
   part(new THREE.SphereGeometry(0.128, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.42), hair, head, [0, 0.13, -0.012]).scale.set(1.0, 1.1, 1.02);
   if (st.hairStyle === 'long') {
@@ -186,15 +234,53 @@ function makeFigure(st) {
   }
   const arm = (side) => {
     const sh = pivot(torso, side * 0.24, 0.47, 0);
-    part(new THREE.CapsuleGeometry(0.056, 0.2, 3, 8), shirt, sh, [0, -0.15, 0]);
+    part(new THREE.CapsuleGeometry(0.056, 0.2, 3, 8), top, sh, [0, -0.15, 0]);
     const el = pivot(sh, 0, -0.3, 0);
-    part(new THREE.CapsuleGeometry(0.048, 0.19, 3, 8), shirt, el, [0, -0.13, 0]);
+    part(new THREE.CapsuleGeometry(0.048, 0.19, 3, 8), top, el, [0, -0.13, 0]);
+    part(new THREE.CylinderGeometry(0.05, 0.05, 0.03, 10), st.jacket ? toon(0x0c0a09) : top, el, [0, -0.235, 0]); // puño
     const hand = pivot(el, 0, -0.28, 0);
-    part(new THREE.SphereGeometry(0.05, 8, 6), skin, hand);
+    // mano: palma con dedos juntos y pulgar
+    part(new THREE.SphereGeometry(0.045, 8, 6), skin, hand, [0, -0.005, 0]).scale.set(1, 1.05, 0.72);
+    part(new THREE.SphereGeometry(0.016, 6, 4), skin, hand, [-side * 0.036, 0.008, 0.016]).userData.noOutline = true;
     return { sh, el, hand };
   };
   const armL = arm(1), armR = arm(-1);
-  return { root, hips, torso, neck, head, legL, legR, armL, armR, shirt, eyes };
+  return { root, hips, torso, neck, head, legL, legR, armL, armR, shirt: top, eyes, mouth, brows };
+}
+
+// Contorno de dibujo animado: copia negra un poco más grande de cada pieza, vista por dentro (técnica del casco invertido).
+const outlineMat = new THREE.MeshBasicMaterial({ color: 0x07050c, side: THREE.BackSide });
+function addOutline(root, width) {
+  const meshes = [];
+  root.traverse((o) => { if (o.isMesh && !o.userData.noOutline && !o.userData.isOutline) meshes.push(o); });
+  for (const m of meshes) {
+    if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+    const r = m.geometry.boundingSphere.radius;
+    if (r < 0.035) continue;
+    const o = new THREE.Mesh(m.geometry, outlineMat);
+    o.scale.setScalar((r + width) / r);
+    o.userData.isOutline = true;
+    o.position.copy(m.geometry.boundingSphere.center).multiplyScalar(1 - o.scale.x);
+    m.add(o);
+  }
+}
+
+// Sombra suave bajo cada músico
+const shadowTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const rg = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  rg.addColorStop(0, 'rgba(0,0,0,0.75)'); rg.addColorStop(0.55, 'rgba(0,0,0,0.4)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+function makeShadow(r) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(r * 2, r * 2), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2;
+  m.position.y = 0.006;
+  m.renderOrder = 1;
+  return m;
 }
 
 function makeGuitar(color, isBass) {
@@ -445,6 +531,8 @@ class Stage3D {
       }
       if (!entry) entry = this.placeholder(role.id, st);
       entry.role = role.id;
+      entry.shadow = makeShadow(role.id === 'drums' ? 0.85 : 0.42);
+      entry.root.add(entry.shadow);
       entry.st = { act: 0, en: 0.3, spW: 0, hit: 0, flinch: 0, cheer: 0, jumpAt: null, jumpH: 0, lastBeat: -1 };
       this.scene.add(entry.root);
       this.band[role.id] = entry;
@@ -485,6 +573,7 @@ class Stage3D {
         stick.rotation.x = Math.PI / 2;
       }
     }
+    addOutline(root, 0.011);
     return entry;
   }
 
@@ -612,6 +701,10 @@ class Stage3D {
       st.hit = Math.max(0, st.hit - dt * 6);
       st.flinch = Math.max(0, st.flinch - dt * 1.6);
       st.cheer = Math.max(0, st.cheer - dt * 0.5);
+      // la sombra se achica y aclara mientras el músico está en el aire
+      const air = role === 'drums' ? 0 : jumpY(st, now);
+      e.shadow.scale.setScalar(1 - air * 1.2);
+      e.shadow.material.opacity = 1 - air * 1.6;
       if (e.kind === 'gltf') {
         if (e.mixer) {
           e.action.paused = !active && playing;
@@ -738,6 +831,14 @@ class Stage3D {
     f.head.rotation.y = look + (c.isPlayer ? Math.sin(now * 17) * 0.28 * fl * fl : 0);
     f.head.rotation.z = sway * 0.08 * hype;
     blink(f, now, P.ph);
+    // cara: el cantante vocaliza por sílabas y respira al final de cada frase; todos gritan con el poder estelar
+    let open = hype > 1 ? 0.15 : 0.03;
+    if (role === 'vocals') {
+      const syl = 0.25 + 0.75 * Math.abs(Math.sin(beats * Math.PI * 1.5 + 0.7 * Math.sin(beats * 0.9)));
+      open = A * syl * (frac(beats / 8) < 0.875 ? 1 : 0.1);
+    }
+    open = Math.max(open, 0.85 * st.cheer, 0.45 * st.spW * A);
+    expression(f, open * (1 - fl), fl * 0.6, fl > 0.05 ? fl : -0.55 * Math.min(1, hype));
 
     e.root.updateMatrixWorld(true);
     if (role === 'vocals') return this.armsVocals(e, c, A, hype, groove);
@@ -828,6 +929,7 @@ class Stage3D {
     f.neck.rotation.x = 0.05 + nod * 0.25 * hype;
     f.head.rotation.set(0.1 + nod * 0.3 * hype - 0.3 * up, Math.sin(now * 0.3) * 0.15 * (1 - A), Math.sin(beats * Math.PI * 0.5) * 0.08 * hype);
     blink(f, now, 2.1);
+    expression(f, Math.max(0.12 * hype * nod, 0.85 * st.cheer, 0.4 * st.spW * A), 0, -0.6 * Math.min(1, hype));
     // en los redobles el cuerpo gira hacia los toms
     const fillT = fill ? inBar - 3 : 0;
     f.torso.rotation.y = fill ? -0.25 + 0.5 * fillT : 0;
