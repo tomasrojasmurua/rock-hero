@@ -141,7 +141,7 @@
       b.onclick = () => selectInst(i);
       box.appendChild(b);
     }
-    const diffs = s.tracks[inst];
+    const diffs = GH.playableDiffs(s.tracks[inst]).map((x) => x.diff);
     selectDiff(diffs.includes(settings.lastDiff) ? settings.lastDiff : diffs[0]);
   }
 
@@ -149,13 +149,17 @@
     current.diff = diff;
     const box = $('d-diff');
     box.innerHTML = '';
-    for (const d of current.song.tracks[current.inst]) {
+    const list = GH.playableDiffs(current.song.tracks[current.inst]);
+    for (const { diff: d, auto } of list) {
       const b = document.createElement('button');
-      b.className = 'chip' + (d === diff ? ' on' : '');
-      b.textContent = GH.DIFF_LABELS[d];
+      b.className = 'chip' + (d === diff ? ' on' : '') + (auto ? ' auto' : '');
+      b.textContent = GH.DIFF_LABELS[d] + (auto ? ' ✦' : '');
       b.onclick = () => selectDiff(d);
       box.appendChild(b);
     }
+    const sel = list.find((x) => x.diff === diff);
+    $('d-auto').hidden = !(sel && sel.auto);
+    if (sel && sel.auto) $('d-auto').textContent = '✦ Versión simplificada creada a partir de ' + GH.DIFF_LABELS[list[0].diff] + '.';
     const best = scores[scoreKey(current.song.id, current.inst, diff)];
     $('d-best').textContent = best
       ? 'Mejor: ' + best.score.toLocaleString('es') + ' pts · ' + '★'.repeat(Math.min(5, best.stars)) + ' · ' + Math.round(best.accuracy * 100) + '%'
@@ -189,6 +193,7 @@
     const opts = {};
     if (ini.hopo_frequency) opts.hopoThreshold = Math.round((parseFloat(ini.hopo_frequency) * parsed.resolution) / 480) || 0;
     if (ini.eighthnote_hopo === '1' || ini.eighthnote_hopo === 'True') opts.eighthHopo = true;
+    GH.fillDifficulties(parsed);
     const playable = GH.buildPlayable(parsed, inst, diff, opts);
     loading(null);
     return playable;
