@@ -40,6 +40,16 @@ El workflow `.github/workflows/pages.yml` publica la app en cada push a `main`, 
 - `js/game.js`: entrada táctil, puntuación y dibujo en canvas.
 - `js/storage.js`, `js/app.js`, `js/sample.js`: biblioteca, interfaz y canción de ejemplo.
 
+## Multijugador
+
+*Menú → Multijugador → Crear sala* da un código y un link para invitar por WhatsApp. Los teléfonos se conectan directo con WebRTC (PeerJS, en `vendor/peerjs`; su servidor público gratuito solo los presenta). El anfitrión elige la canción y, si alguien no la tiene, se la envía por la misma conexión. Cada jugador elige su instrumento y su dificultad.
+
+El anfitrión elige el modo en la sala:
+
+- **Concert**: tocan en conjunto con un medidor de banda compartido (el promedio del medidor de cada jugador). Si llega a cero, pierden la canción y el anfitrión puede reintentar.
+- **Batalla**: 1 contra 1 con una balanza. Gana quien abre una ventaja de medio puntaje base de su canción, o quien tenga más puntaje al terminar.
+- **Quick Gig**: todos tocan la canción completa sin importar los fallos y comparan resultados.
+
 ## Banda en 3D
 
 `js/stage3d.js` dibuja con Three.js (en `vendor/three`, licencia MIT) un escenario con cinco puestos: voz, guitarra solista, guitarra rítmica, bajo y batería. Por defecto usa músicos provisionales hechos con primitivas (con contorno de dibujo animado, sombra, caras expresivas y ropa propia de cada uno) y animados al tempo de la canción: los brazos alcanzan el mástil, el micrófono o cada tambor (cinemática inversa), el baterista toca charles, caja, bombo, platillos y redobles, y cada músico tiene su propio estilo de rebote, cabeceo y pasos. La banda reacciona al jugador: su músico se encoge al fallar (y deja de tocar si la canción trae su pista), salta al subir el multiplicador y, con poder estelar, levanta la guitarra mientras toda la banda salta y el público se viene arriba.
