@@ -490,7 +490,7 @@
         if (key === 'volume') audio.setVolume(settings.volume);
       };
     }
-    for (const [id, key] of [['s-lefty', 'lefty'], ['s-miss', 'missSound'], ['s-vibrate', 'vibrate'], ['s-stage3d', 'stage3d']]) {
+    for (const [id, key] of [['s-lefty', 'lefty'], ['s-miss', 'missSound'], ['s-vibrate', 'vibrate'], ['s-stage3d', 'stage3d'], ['s-cinema', 'cinema']]) {
       $(id).checked = !!settings[key];
       $(id).onchange = () => { settings[key] = $(id).checked; GH.settings.save(settings); };
     }
