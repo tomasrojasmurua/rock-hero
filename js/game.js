@@ -83,7 +83,8 @@
     now() { return (this.paused ? this._pausedPerf : performance.now()) - this._pauseTotal; }
 
     // En pausa se congela todo: se paran las pistas y el reloj de la canción queda fijo en `pausedAt`.
-    pause() {
+    // `keepCtx`: no suspende el contexto de audio (en multijugador se reanuda sin un toque, y iOS podría no dejarlo).
+    pause(keepCtx) {
       if (this.paused || this.finished) return;
       this.audio.tick();
       this.pausedAt = this.audio.songTime();
@@ -91,7 +92,7 @@
       this.paused = true;
       this.resuming = false;
       this.audio.stop();
-      this.audio.pause();
+      if (!keepCtx) this.audio.pause();
       this.pointers.clear();
       this.laneDown = [0, 0, 0, 0, 0];
     }
