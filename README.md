@@ -45,4 +45,6 @@ El workflow `.github/workflows/pages.yml` publica la app en cada push a `main`, 
 
 La cámara alterna el plano general con primeros planos de cada músico y planos de dos músicos, cortando en la raya del compás (siempre igual para la misma canción). Los eventos del juego fuerzan tomas: un fallo lleva la cámara al músico del jugador, y subir el multiplicador o activar el poder estelar vuelve al plano general para ver a la banda saltar. Se puede desactivar en *Ajustes* (*Cámara con cortes y primeros planos*).
 
+Los músicos usan los modelos CC0 *Universal Base Characters* de Quaternius (`assets/musicians/`, licencia en `LICENSE-Quaternius.txt`): ropa y peinado distintos para cada puesto, y las animaciones se aplican al esqueleto del modelo desde `js/musician.js`. Si no cargan, se usan figuras simples.
+
 En *Ajustes → Banda en 3D* se puede cargar un modelo `.glb` para cada puesto. Se escala solo a la altura correcta y, si trae animaciones, reproduce la que mejor encaje con el puesto (por ejemplo, una animación de Mixamo de tocar guitarra). Los modelos se guardan solo en el navegador del jugador, no en el repositorio.

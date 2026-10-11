@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { buildMusician } from './musician.js';
 
 const GH = window.GH;
 
@@ -23,6 +24,14 @@ const STYLES = {
   rhythm: { skin: 0xf0c4a4, shirt: 0xe7e5e4, pants: 0x27272a, hair: 0x3b2516, hairStyle: 'curly', guitar: 0xf5f5f0, tie: 0x111111, collar: true, shoe: 0x7c2d12, sole: 0xe7e5e4 },
   bass: { skin: 0xe6b494, shirt: 0x334155, pants: 0x0f172a, hair: 0x2b1d14, hairStyle: 'mop', eye: 0x3f5f3a, guitar: 0x111827, bass: true, hoodie: true, shoe: 0x1f2937, sole: 0xf4f4f5 },
   drums: { skin: 0xd8a07c, shirt: 0x0f172a, pants: 0x1f2937, hair: 0x1a1a1a, hairStyle: 'mop', stripe: 0xe5e7eb, shoe: 0x111111, sole: 0xe5e7eb },
+};
+// Aspecto de cada músico con los modelos de Quaternius (ropa, pelo, tono de piel y estatura)
+const QSTYLES = {
+  vocals: { jacket: 0x1c1917, shirt: 0x6b7280, sleeves: 'long', pants: 0x1e293b, shoe: 0x0c0a09, sole: 0x1c1917, hairModel: 'hair_long', hair: 0x2a1b12, shades: true, skin: [1.08, 1.05, 1.05], scale: 1 },
+  lead: { shirt: 0x7f1d1d, sleeves: 'short', pants: 0x18181b, shoe: 0x18181b, sole: 0xf4f4f5, hairModel: 'hair_buzzed', hair: 0x101010, skin: [0.96, 0.92, 0.9], scale: 1.02 },
+  rhythm: { shirt: 0xe7e5e4, sleeves: 'long', pants: 0x27272a, shoe: 0x7c2d12, sole: 0xe7e5e4, hairModel: 'hair_simpleparted', hair: 0x3b2516, tie: 0x111111, skin: [1.12, 1.1, 1.1], scale: 0.98 },
+  bass: { shirt: 0x334155, sleeves: 'long', pants: 0x0f172a, shoe: 0x1f2937, sole: 0xf4f4f5, hairModel: 'hair_buns', hair: 0x2b1d14, hoodie: true, skin: [1.05, 1.02, 1.02], scale: 1.04 },
+  drums: { shirt: 0x0f172a, sleeves: 'none', pants: 0x1f2937, shoe: 0x111111, sole: 0xe5e7eb, hairModel: 'hair_buzzed', hair: 0x2a1a10, beard: true, skin: [0.98, 0.94, 0.92], scale: 1 },
 };
 const CLIP_HINT = { vocals: /sing|vocal|mic/i, lead: /guitar|play/i, rhythm: /guitar|play/i, bass: /bass|guitar|play/i, drums: /drum/i };
 
@@ -75,12 +84,14 @@ function jumpCrouch(st, now) {
 }
 
 function blink(f, now, ph) {
+  if (f.imported) return;
   const v = frac(now / 3.3 + ph * 0.37) < 0.035 ? 0.15 : 1;
   for (const e of f.eyes) e.scale.y = v;
 }
 
 // Gestos de la cara: boca (abrir/estirar) y cejas (>0 preocupado, <0 concentrado).
 function expression(f, open, wide, brow) {
+  if (f.imported) { if (f.expr) f.expr(open, wide, brow); return; }
   const m = f.mouth;
   m.lipLow.position.y = 0.0645 - 0.019 * open;
   m.lipLow.scale.x = m.lipUp.scale.x = 1 + 0.35 * wide;
@@ -103,7 +114,7 @@ const PERSONA = {
 
 // Brazos con cinemática inversa de dos huesos: la mano llega a un punto (mástil, micrófono, tambor)
 // y el codo apunta hacia `pole` (en el espacio del torso).
-const UPPER = 0.3, FORE = 0.28;
+const DEF_UPPER = 0.3, DEF_FORE = 0.28;
 const _t = new THREE.Vector3(), _v = new THREE.Vector3(), _p = new THREE.Vector3();
 const _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3(), _m = new THREE.Matrix4();
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _e = new THREE.Vector3();
@@ -111,6 +122,7 @@ function reach(arm, target, pole) {
   _v.copy(target);
   arm.sh.parent.worldToLocal(_v);
   _v.sub(arm.sh.position);
+  const UPPER = arm.U || DEF_UPPER, FORE = arm.F || DEF_FORE;
   const d = Math.min(UPPER + FORE - 1e-3, Math.max(0.08, _v.length()));
   _v.normalize();
   const cosA = Math.max(-1, Math.min(1, (UPPER * UPPER + d * d - FORE * FORE) / (2 * UPPER * d)));
@@ -629,15 +641,20 @@ class Stage3D {
 
   // models: {rol: ArrayBuffer} de archivos .glb importados
   async setBand(models) {
-    for (const r of Object.values(this.band)) this.scene.remove(r.root);
-    this.band = {};
-    for (const role of ROLES) {
-      const st = STYLES[role.id];
+    // los músicos se cargan en paralelo; si llega otra llamada mientras tanto, gana la última
+    const gen = (this.bandGen = (this.bandGen || 0) + 1);
+    const made = await Promise.all(ROLES.map(async (role) => {
       let entry = null;
       if (models[role.id]) {
         try { entry = await this.loadModel(role.id, models[role.id]); } catch (e) { console.warn('Modelo de ' + role.label + ' no válido', e); }
       }
-      if (!entry) entry = this.placeholder(role.id, st);
+      if (!entry) entry = await this.placeholder(role.id, STYLES[role.id]);
+      return [role, entry];
+    }));
+    if (gen !== this.bandGen) return;
+    for (const r of Object.values(this.band)) this.scene.remove(r.root);
+    this.band = {};
+    for (const [role, entry] of made) {
       entry.role = role.id;
       entry.shadow = makeShadow(role.id === 'drums' ? 0.85 : 0.42);
       entry.root.add(entry.shadow);
@@ -648,8 +665,9 @@ class Stage3D {
     this.layout();
   }
 
-  placeholder(role, st) {
-    const fig = makeFigure(st);
+  async placeholder(role, st) {
+    let fig;
+    try { fig = await buildMusician(QSTYLES[role]); } catch (e) { console.warn('No se cargaron los modelos de los músicos, uso figuras simples', e); fig = makeFigure(st); }
     const root = new THREE.Group();
     root.add(fig.root);
     const entry = { root, fig, kind: 'proc' };
@@ -834,6 +852,7 @@ class Stage3D {
       // brillo de la camisa del músico del jugador con poder estelar, latiendo con el pulso
       const glow = isPlayer ? st.spW * (0.55 + 0.45 * Math.max(0, 1 - frac(beats) * 2.5)) : 0;
       e.fig.shirt.emissive.setRGB(0.05 * glow, 0.45 * glow, 0.56 * glow);
+      if (e.fig.sync) e.fig.sync();
     }
     this.updateCamera(ctx, game);
     this.renderer.render(this.scene, this.camera);
@@ -868,7 +887,7 @@ class Stage3D {
   subjectPoint(role, out) {
     const e = this.band[role];
     if (!e) return out.set(0, 1.5, 0);
-    if (e.fig) e.fig.neck.getWorldPosition(out);
+    if (e.fig) { e.fig.neck.getWorldPosition(out); if (e.fig.imported) out.y += 0.06; }
     else out.set(e.root.position.x, e.root.position.y + 1.55, e.root.position.z);
     return out;
   }
