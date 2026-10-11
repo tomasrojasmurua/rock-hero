@@ -435,7 +435,7 @@
 
     draw(t) {
       const gm = this.game, g = gm.ctx2d, W = gm.W, H = gm.H, S = this.sp;
-      const now = performance.now();
+      const now = gm.now(); // se detiene en pausa
       // pulso en cada compás
       let pulse = 0;
       const bl = gm.tm.beatLines(t - 0.25, t + 0.01);

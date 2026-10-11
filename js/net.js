@@ -179,6 +179,8 @@
           break;
         case 'score':
         case 'final':
+        case 'pause':
+        case 'resume':
           m.id = from;
           this.emit(m.t, m);
           for (const id of this.conns.keys()) if (id !== from) this.send(m, id);
@@ -217,7 +219,7 @@
         }
         case 'ping': this.send({ t: 'pong' }); break;
         case 'start': this.emit('start', m); break;
-        case 'score': case 'final': this.emit(m.t, m); break;
+        case 'score': case 'final': case 'pause': case 'resume': this.emit(m.t, m); break;
         case 'bye':
           this.emit('closed', 'El anfitrión cerró la sala.');
           this.leave();
