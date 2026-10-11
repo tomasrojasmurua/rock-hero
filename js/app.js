@@ -30,6 +30,24 @@
   function loading(msg) { if (msg) { $('loading-msg').textContent = msg; show('loading'); } else hide('loading'); }
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const scoreKey = (id, inst, diff) => id + '|' + inst + '|' + diff;
+  // Récords guardados: los campos de primer nivel son el mejor resultado y `top` las 5 mejores partidas
+  // (los guardados antes del leaderboard no traen `top` y cuentan como una sola partida).
+  const TOP_N = 5;
+  const topOf = (rec) => (!rec ? [] : rec.top || [{ score: rec.score, stars: rec.stars, accuracy: rec.accuracy, maxCombo: rec.maxCombo, at: rec.at }]);
+  function renderTop(ol, top, mark) {
+    ol.innerHTML = '';
+    top.forEach((e, i) => {
+      const li = document.createElement('li');
+      if (e === mark) li.className = 'me';
+      const d = e.at ? new Date(e.at).toLocaleDateString('es', { day: 'numeric', month: 'short' }) : '';
+      li.innerHTML = '<span class="lb-pos">' + (i + 1) + '</span><span class="lb-who"></span><span class="lb-acc">' +
+        Math.round((e.accuracy || 0) * 100) + '%</span><b></b>';
+      li.querySelector('.lb-who').textContent = [e.name, d].filter(Boolean).join(' · ') || '–';
+      li.querySelector('b').textContent = e.score.toLocaleString('es');
+      ol.appendChild(li);
+    });
+    ol.hidden = !top.length;
+  }
 
   // ---------- biblioteca ----------
   async function refresh() {
@@ -164,8 +182,9 @@
     if (sel && sel.auto) $('d-auto').textContent = '✦ Versión simplificada creada a partir de ' + GH.DIFF_LABELS[list[0].diff] + '.';
     const best = scores[scoreKey(current.song.id, current.inst, diff)];
     $('d-best').textContent = best
-      ? 'Mejor: ' + best.score.toLocaleString('es') + ' pts · ' + '★'.repeat(Math.min(5, best.stars)) + ' · ' + Math.round(best.accuracy * 100) + '%'
+      ? 'Top ' + TOP_N + ' · ' + GH.INSTRUMENTS[current.inst] + ' · ' + GH.DIFF_LABELS[diff]
       : 'Aún sin puntuación en esta dificultad.';
+    renderTop($('d-top'), topOf(best), null);
   }
 
   // ---------- partida ----------
@@ -406,8 +425,12 @@
     const key = scoreKey(current.song.id, current.inst, current.diff);
     const prev = scores[key];
     const isBest = !prev || r.score > prev.score;
-    if (isBest) {
-      const val = { score: r.score, stars: r.stars, accuracy: r.accuracy, maxCombo: r.maxCombo, at: Date.now() };
+    const entry = { score: r.score, stars: r.stars, accuracy: r.accuracy, maxCombo: r.maxCombo, at: Date.now() };
+    if (settings.playerName) entry.name = settings.playerName;
+    const top = topOf(prev).concat(entry).sort((a, b) => b.score - a.score || a.at - b.at).slice(0, TOP_N);
+    if (top.includes(entry)) {
+      const val = Object.assign({}, top[0], { top });
+      delete val.name;
       scores[key] = val;
       GH.store.putScore(key, val).catch(() => {});
     }
@@ -415,7 +438,9 @@
     $('r-stars').textContent = '★'.repeat(Math.min(5, r.stars)) + '☆'.repeat(Math.max(0, 5 - r.stars));
     $('r-stars').style.color = r.stars >= 6 ? '#fbbf24' : '';
     $('r-score').textContent = r.score.toLocaleString('es');
-    $('r-best').textContent = isBest ? (prev ? '¡Nuevo récord!' : '') : 'Récord: ' + prev.score.toLocaleString('es');
+    const pos = top.indexOf(entry);
+    $('r-best').textContent = isBest ? (prev ? '¡Nuevo récord!' : '') : pos >= 0 ? '¡Puesto ' + (pos + 1) + ' en tu top ' + TOP_N + '!' : 'Récord: ' + prev.score.toLocaleString('es');
+    renderTop($('r-top'), mp.inRound ? [] : top, entry);
     $('r-acc').textContent = Math.round(r.accuracy * 100) + '%';
     $('r-notes').textContent = r.hit + '/' + r.total;
     $('r-combo').textContent = r.maxCombo;
