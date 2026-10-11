@@ -120,7 +120,12 @@
       // En batería, el bombo junto a un tambor se descarta: en pantalla táctil el bombo se toca
       // con cualquier carril, así que pediría dos toques simultáneos. Queda solo el tambor.
       const open = g.open && !g.lanes.length;
-      const lanes = open ? [] : g.lanes.slice();
+      let lanes = open ? [] : g.lanes.slice();
+      // Acordes simplificados: en guitarra, 3+ notas se reducen a las dos de los extremos.
+      if (!isDrums && opts.maxChordNotes && lanes.length > opts.maxChordNotes) {
+        lanes.sort((a, b) => a - b);
+        lanes = [lanes[0], lanes[lanes.length - 1]];
+      }
       let hopo = false, tap = false;
       if (!isDrums) {
         const single = lanes.length === 1 || open;
