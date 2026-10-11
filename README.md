@@ -9,6 +9,7 @@ Juego de ritmo táctil de 5 carriles (estilo Guitar Hero / Clone Hero) como PWA 
 - Instrumentos: guitarra, guitarra coop, rítmica, bajo, teclado y batería (el bombo se toca como nota abierta en cualquier carril); 4 dificultades.
 - Si una canción solo trae Experto (u otra dificultad alta), Difícil, Medio y Fácil se generan solas: menos notas (prioriza las del pulso), menos carriles y acordes más pequeños. En la pantalla aparecen con ✦.
 - Notas HOPO y tap (se pueden tocar deslizando el dedo), notas abiertas, acordes, sostenidos, poder estelar, multiplicador hasta x4 (x8 con poder estelar), secciones, récords y estrellas.
+- Leaderboard local: las 5 mejores partidas de cada canción, por instrumento y dificultad, en el detalle de la canción y en la pantalla de resultados.
 - Si la canción trae la pista del instrumento por separado, esa pista se silencia al fallar.
 - Ajustes: velocidad de notas, calibración de latencia (con test de toques), ventana de acierto, modo zurdo, volumen.
 - Teclado físico: A S D F G (o 1–5), espacio para el poder estelar, Esc para pausa.
