@@ -406,7 +406,7 @@
       vg.addColorStop(0, 'rgba(0,0,0,0.55)'); vg.addColorStop(0.2, 'rgba(0,0,0,0)'); vg.addColorStop(0.8, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
       g.fillStyle = vg; g.fillRect(0, 0, W, H);
       // cuerdas
-      for (let l = 0; l < 5; l++) {
+      for (let l = 0; l < gm.nLanes; l++) {
         const xa = gm.laneX(l, near.s), xb = gm.laneX(l, far.s);
         const wa = 2.6, wb = 0.8;
         g.fillStyle = 'rgba(0,0,0,0.6)';
@@ -473,7 +473,7 @@
       }
 
       // cuerdas presionadas
-      for (let l = 0; l < 5; l++) {
+      for (let l = 0; l < gm.nLanes; l++) {
         if (!gm.laneDown[l]) continue;
         const xa = gm.laneX(l, 1), xb = gm.laneX(l, far.s);
         g.strokeStyle = shade(GH.LANE_COLORS[l], 0.3, 0.8);
@@ -489,7 +489,7 @@
         if (n.endTime < t - 0.4) continue;
         vis.push(n);
       }
-      const rT = gm.halfW * 0.19;
+      const rT = gm.halfW * 0.19 * (gm.nLanes === 4 ? 1.18 : 1);
 
       // colas de sostenidos
       for (const n of vis) {
@@ -536,7 +536,7 @@
 
       // objetivos
       const tw = rT * 2.2;
-      for (let l = 0; l < 5; l++) {
+      for (let l = 0; l < gm.nLanes; l++) {
         const down = gm.laneDown[l] > 0;
         const x = gm.laneX(l, 1);
         const spr = down ? S.targets[l].down : S.targets[l].up;
@@ -587,7 +587,7 @@
         if (e.type !== 'hit') continue;
         if (!e.sparked) { e.sparked = true; this.spawnSparks(e.lane, rT); }
         const k = (now - e.t0) / 320;
-        const lanes = e.lane < 0 ? [0, 1, 2, 3, 4] : [e.lane];
+        const lanes = e.lane < 0 ? gm.allLanes() : [e.lane];
         for (const l of lanes) {
           const x = gm.laneX(l, 1);
           const glow = e.lane < 0 ? S.glowOpen : S.glows[l];
@@ -600,7 +600,7 @@
       }
       for (const n of vis) {
         if (!n.holding) continue;
-        const lanes = n.open ? [0, 1, 2, 3, 4] : n.lanes;
+        const lanes = n.open ? gm.allLanes() : n.lanes;
         for (const l of lanes) {
           const x = gm.laneX(l, 1);
           const fl = 0.75 + 0.25 * Math.sin(now / 45 + l * 2);
@@ -689,7 +689,7 @@
     spawnSparks(lane, rT) {
       const gm = this.game;
       const sparks = (this.sparks = this.sparks || []);
-      const lanes = lane < 0 ? [0, 1, 2, 3, 4] : [lane];
+      const lanes = lane < 0 ? gm.allLanes() : [lane];
       const count = (lane < 0 ? 4 : 8) + gm.multiplier * 2;
       for (const l of lanes) {
         const col = gm.spActive ? SP : lane < 0 ? OPEN : GH.LANE_COLORS[l];

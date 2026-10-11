@@ -13,6 +13,10 @@
       this.settings = opts.settings;
       this.play = opts.playable;
       this.notes = this.play.notes;
+      // Medio y Fácil se juegan con 4 botones (sin el naranja) salvo que el chart use ese carril.
+      let maxLane = -1;
+      for (const n of this.notes) if (!n.open) for (const l of n.lanes) if (l > maxLane) maxLane = l;
+      this.nLanes = (this.play.diff === 'medium' || this.play.diff === 'easy') && maxLane < 4 ? 4 : 5;
       this.tm = this.play.tempoMap;
       this.onEnd = opts.onEnd;
       this.onPauseRequest = opts.onPauseRequest;
@@ -158,14 +162,16 @@
         if (k === ' ' || k === 'enter') { this.activateSP(); e.preventDefault(); return; }
         if (KEYS[k] == null || this.paused) return;
         let lane = KEYS[k];
-        if (this.settings.lefty) lane = 4 - lane;
+        if (lane >= this.nLanes) return;
+        if (this.settings.lefty) lane = this.nLanes - 1 - lane;
         this.press(lane, this.audio.songTimeAt(performance.now()), false);
       };
       this._ku = (e) => {
         const k = e.key.toLowerCase();
         if (KEYS[k] == null) return;
         let lane = KEYS[k];
-        if (this.settings.lefty) lane = 4 - lane;
+        if (lane >= this.nLanes) return;
+        if (this.settings.lefty) lane = this.nLanes - 1 - lane;
         this.laneDown[lane] = Math.max(0, this.laneDown[lane] - 1);
       };
       this._rs = () => this.resize();
@@ -193,9 +199,10 @@
       const r = this.canvas.getBoundingClientRect();
       const x = clientX - r.left;
       const l = this.cx - this.halfW;
-      let lane = Math.floor(((x - l) / (2 * this.halfW)) * 5);
-      lane = Math.max(0, Math.min(4, lane));
-      return this.settings.lefty ? 4 - lane : lane;
+      const n = this.nLanes;
+      let lane = Math.floor(((x - l) / (2 * this.halfW)) * n);
+      lane = Math.max(0, Math.min(n - 1, lane));
+      return this.settings.lefty ? n - 1 - lane : lane;
     }
 
     press(lane, t, slide) {
@@ -366,9 +373,11 @@
       return { s, y: this.horizonY + (this.hitY - this.horizonY) * s };
     }
     laneX(lane, s) {
-      const vis = this.settings.lefty ? 4 - lane : lane;
-      return this.cx + (-0.8 + vis * 0.4) * this.halfW * s;
+      const n = this.nLanes;
+      const vis = this.settings.lefty ? n - 1 - lane : lane;
+      return this.cx + (-1 + (2 * vis + 1) / n) * this.halfW * s;
     }
+    allLanes() { return Array.from({ length: this.nLanes }, (_, i) => i); }
 
     draw(t) {
       this.rockShown += (this.rock - this.rockShown) * 0.12;
