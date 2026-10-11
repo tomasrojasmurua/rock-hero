@@ -135,6 +135,7 @@
         }
         const lane = this.laneAt(e.clientX);
         this.pointers.set(e.pointerId, lane);
+        this.heldKeys = this.heldKeys || new Set();
         try { c.setPointerCapture(e.pointerId); } catch (err) { /* sin captura */ }
         this.press(lane, this.audio.songTimeAt(e.timeStamp || performance.now()), false);
       };
@@ -153,7 +154,7 @@
         if (!this.pointers.has(e.pointerId)) return;
         const lane = this.pointers.get(e.pointerId);
         this.pointers.delete(e.pointerId);
-        this.laneDown[lane] = Math.max(0, this.laneDown[lane] - 1);
+        this._sync();
       };
       this._kd = (e) => {
         if (e.repeat) return;
@@ -164,6 +165,7 @@
         let lane = KEYS[k];
         if (lane >= this.nLanes) return;
         if (this.settings.lefty) lane = this.nLanes - 1 - lane;
+        (this.heldKeys = this.heldKeys || new Set()).add(k);
         this.press(lane, this.audio.songTimeAt(performance.now()), false);
       };
       this._ku = (e) => {
@@ -171,14 +173,23 @@
         if (KEYS[k] == null) return;
         let lane = KEYS[k];
         if (lane >= this.nLanes) return;
-        if (this.settings.lefty) lane = this.nLanes - 1 - lane;
-        this.laneDown[lane] = Math.max(0, this.laneDown[lane] - 1);
+        if (this.heldKeys) this.heldKeys.delete(k);
+        this._sync();
       };
+      // Estado real de los dedos/teclas: recalcula laneDown desde cero para que nunca quede un carril "pegado".
+      this._release = () => { this.pointers.clear(); if (this.heldKeys) this.heldKeys.clear(); this._sync(); };
+      this._te = (e) => { if (!e.touches || e.touches.length === 0) this._release(); };
+      this._vis = () => { if (document.hidden) this._release(); };
       this._rs = () => this.resize();
       c.addEventListener('pointerdown', this._pd);
       c.addEventListener('pointermove', this._pm);
       c.addEventListener('pointerup', this._pu);
       c.addEventListener('pointercancel', this._pu);
+      c.addEventListener('lostpointercapture', this._pu);
+      window.addEventListener('touchend', this._te, true);
+      window.addEventListener('touchcancel', this._te, true);
+      window.addEventListener('blur', this._release);
+      document.addEventListener('visibilitychange', this._vis);
       window.addEventListener('keydown', this._kd);
       window.addEventListener('keyup', this._ku);
       window.addEventListener('resize', this._rs);
@@ -190,9 +201,26 @@
       c.removeEventListener('pointermove', this._pm);
       c.removeEventListener('pointerup', this._pu);
       c.removeEventListener('pointercancel', this._pu);
+      c.removeEventListener('lostpointercapture', this._pu);
+      window.removeEventListener('touchend', this._te, true);
+      window.removeEventListener('touchcancel', this._te, true);
+      window.removeEventListener('blur', this._release);
+      document.removeEventListener('visibilitychange', this._vis);
       window.removeEventListener('keydown', this._kd);
       window.removeEventListener('keyup', this._ku);
       window.removeEventListener('resize', this._rs);
+    }
+
+    _sync() {
+      const d = [0, 0, 0, 0, 0];
+      for (const l of this.pointers.values()) d[l]++;
+      if (this.heldKeys) for (const k of this.heldKeys) {
+        let l = KEYS[k];
+        if (l == null || l >= this.nLanes) continue;
+        if (this.settings.lefty) l = this.nLanes - 1 - l;
+        d[l]++;
+      }
+      this.laneDown = d;
     }
 
     laneAt(clientX) {
@@ -276,6 +304,7 @@
 
     // ---------------- lógica por cuadro ----------------
     update(t) {
+      this._sync();
       const W = this.win;
       for (let i = this.idx; i < this.notes.length; i++) {
         const n = this.notes[i];
