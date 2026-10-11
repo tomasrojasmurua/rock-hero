@@ -17,6 +17,7 @@
   function hide(id) { $(id).hidden = true; }
   function screen(id) {
     document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === id));
+    updatePill();
   }
   let toastTimer;
   function toast(msg, ms) {
@@ -41,6 +42,8 @@
     }
     songs.sort((a, b) => (a.artist + a.name).localeCompare(b.artist + b.name, 'es'));
     renderList();
+    const total = songs.length + 1; // más la canción de ejemplo
+    $('home-lib').textContent = total + (total === 1 ? ' canción' : ' canciones') + ' en tu setlist';
     if (navigator.storage && navigator.storage.estimate) {
       navigator.storage.estimate().then((est) => {
         const mb = (x) => (x / 1048576).toFixed(0);
@@ -116,7 +119,8 @@
     marquee($('d-name'), s.name);
     marquee($('d-artist'), [s.artist, s.album, s.year].filter(Boolean).join(' · '));
     marquee($('d-charter'), s.charter ? 'Chart: ' + s.charter : '');
-    $('d-delete').hidden = !!s.builtin;
+    $('d-delete').hidden = !!s.builtin || !!room;
+    $('d-play').textContent = !forRoom(s) ? '▶ Jugar' : room.isHost && !(mp.song && mp.song.meta.id === s.id) ? 'Elegir para la sala' : 'Listo';
     const cov = $('d-cover');
     cov.style.backgroundImage = '';
     cov.textContent = s.builtin ? '⭐' : '🎵';
@@ -139,7 +143,7 @@
       b.onclick = () => selectInst(i);
       box.appendChild(b);
     }
-    const diffs = s.tracks[inst];
+    const diffs = GH.playableDiffs(s.tracks[inst]).map((x) => x.diff);
     selectDiff(diffs.includes(settings.lastDiff) ? settings.lastDiff : diffs[0]);
   }
 
@@ -147,13 +151,17 @@
     current.diff = diff;
     const box = $('d-diff');
     box.innerHTML = '';
-    for (const d of current.song.tracks[current.inst]) {
+    const list = GH.playableDiffs(current.song.tracks[current.inst]);
+    for (const { diff: d, auto } of list) {
       const b = document.createElement('button');
-      b.className = 'chip' + (d === diff ? ' on' : '');
-      b.textContent = GH.DIFF_LABELS[d];
+      b.className = 'chip' + (d === diff ? ' on' : '') + (auto ? ' auto' : '');
+      b.textContent = GH.DIFF_LABELS[d] + (auto ? ' ✦' : '');
       b.onclick = () => selectDiff(d);
       box.appendChild(b);
     }
+    const sel = list.find((x) => x.diff === diff);
+    $('d-auto').hidden = !(sel && sel.auto);
+    if (sel && sel.auto) $('d-auto').textContent = '✦ Versión simplificada creada a partir de ' + GH.DIFF_LABELS[list[0].diff] + '.';
     const best = scores[scoreKey(current.song.id, current.inst, diff)];
     $('d-best').textContent = best
       ? 'Mejor: ' + best.score.toLocaleString('es') + ' pts · ' + '★'.repeat(Math.min(5, best.stars)) + ' · ' + Math.round(best.accuracy * 100) + '%'
@@ -161,42 +169,53 @@
   }
 
   // ---------- partida ----------
-  async function startGame() {
-    const { song, inst, diff } = current;
+  // Carga notas y audio de la canción y devuelve las notas jugables.
+  async function prepareSong(song, inst, diff) {
+    audio.setVolume(settings.volume);
+    audio.offset = settings.offsetMs / 1000;
+    let parsed;
+    if (song.builtin) {
+      loading('Preparando canción de ejemplo…');
+      parsed = GH.parseChart(GH.sampleChartText());
+      if (!sampleAudio) sampleAudio = await GH.renderSampleAudio(audio.ctx.sampleRate);
+      audio.setBuffers([sampleAudio.backing], [sampleAudio.lead]);
+    } else {
+      loading('Cargando ' + song.name + '…');
+      let files;
+      try { files = await GH.store.getFiles(song.id); }
+      catch (e) { throw new Error('No se pudo leer la canción guardada. Bórrala (Eliminar) e impórtala de nuevo.'); }
+      if (!files) throw new Error('No se encontraron los archivos de la canción');
+      try { parsed = await GH.parseSongFiles(files, song.ini); }
+      catch (e) { throw new Error('Archivo de notas ilegible: ' + (e.message || e) + '. Elimina e importa de nuevo.'); }
+      const delay = parseFloat(song.ini && song.ini.delay) || 0;
+      parsed.offset = (parsed.offset || 0) + delay / 1000;
+      await audio.loadStems(files, inst, loading);
+    }
+    const ini = song.ini || {};
+    const opts = {};
+    if (ini.hopo_frequency) opts.hopoThreshold = Math.round((parseFloat(ini.hopo_frequency) * parsed.resolution) / 480) || 0;
+    if (ini.eighthnote_hopo === '1' || ini.eighthnote_hopo === 'True') opts.eighthHopo = true;
+    if (settings.simpleChords) opts.maxChordNotes = 2;
+    GH.fillDifficulties(parsed);
+    const playable = GH.buildPlayable(parsed, inst, diff, opts);
+    loading(null);
+    return playable;
+  }
+
+  function rememberChoice(inst, diff) {
     settings.lastInst = inst;
     settings.lastDiff = diff;
     GH.settings.save(settings);
+  }
+
+  async function startGame() {
+    if (performance.now() < startLockUntil) return;
+    const { song, inst, diff } = current;
+    rememberChoice(inst, diff);
     audio.unlock(); // dentro del gesto del usuario
-    audio.setVolume(settings.volume);
-    audio.offset = settings.offsetMs / 1000;
     hide('detail');
     try {
-      let parsed;
-      if (song.builtin) {
-        loading('Preparando canción de ejemplo…');
-        parsed = GH.parseChart(GH.sampleChartText());
-        if (!sampleAudio) sampleAudio = await GH.renderSampleAudio(audio.ctx.sampleRate);
-        audio.setBuffers([sampleAudio.backing], [sampleAudio.lead]);
-      } else {
-        loading('Cargando ' + song.name + '…');
-        let files;
-        try { files = await GH.store.getFiles(song.id); }
-        catch (e) { throw new Error('No se pudo leer la canción guardada. Bórrala (Eliminar) e impórtala de nuevo.'); }
-        if (!files) throw new Error('No se encontraron los archivos de la canción');
-        try { parsed = await GH.parseSongFiles(files, song.ini); }
-        catch (e) { throw new Error('Archivo de notas ilegible: ' + (e.message || e) + '. Elimina e importa de nuevo.'); }
-        const delay = parseFloat(song.ini && song.ini.delay) || 0;
-        parsed.offset = (parsed.offset || 0) + delay / 1000;
-        await audio.loadStems(files, inst, loading);
-      }
-      const ini = song.ini || {};
-      const opts = {};
-      if (ini.hopo_frequency) opts.hopoThreshold = Math.round((parseFloat(ini.hopo_frequency) * parsed.resolution) / 480) || 0;
-      if (ini.eighthnote_hopo === '1' || ini.eighthnote_hopo === 'True') opts.eighthHopo = true;
-      if (settings.simpleChords) opts.maxChordNotes = 2;
-      const playable = GH.buildPlayable(parsed, inst, diff, opts);
-      loading(null);
-      enterGame(playable);
+      enterGame(await prepareSong(song, inst, diff));
     } catch (e) {
       loading(null);
       console.error(e);
@@ -263,17 +282,44 @@
     }
   }
 
+  // Altura de la muesca/barra de estado (env(safe-area-inset-top)); en iPhone con muesca vertical se deja un margen mínimo.
+  function safeTop() {
+    const p = document.createElement('div');
+    p.style.cssText = 'position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top,0px);visibility:hidden';
+    document.body.appendChild(p);
+    let v = p.offsetHeight;
+    p.remove();
+    const portrait = innerHeight > innerWidth;
+    // Si la página no recibe la zona segura (p. ej. dentro de otra app), se reserva un margen fijo para la muesca.
+    const fallback = !v && portrait && /iPhone/.test(navigator.userAgent) && Math.max(window.screen.width, window.screen.height) >= 812;
+    if (fallback) v = 44;
+    document.documentElement.style.setProperty('--safe-top', fallback ? v + 'px' : 'env(safe-area-inset-top, 0px)');
+    return v;
+  }
+
+  // Tras Salir no se permite arrancar otra partida durante un momento (evita toques fantasma que reinician la canción).
+  let startLockUntil = 0, entering = false;
   async function enterGame(playable) {
+    if (entering || performance.now() < startLockUntil) return;
+    entering = true;
+    try { await enterGameNow(playable); } finally { entering = false; }
+  }
+  async function enterGameNow(playable) {
     screen('game');
     goFullscreen();
     if (game) game.destroy();
     const stage3d = await prepareStage3D();
+    if (performance.now() < startLockUntil) { screen('menu'); return; }
+    if (game) game.destroy();
     game = new GH.Game({
       canvas: $('canvas'), audio, settings, playable, stage3d,
       onEnd: finish,
-      onPauseRequest: () => (game.paused ? resumeGame() : pauseGame()),
+      onPauseRequest: () => (game.paused && !countdownTimer ? resumeGame() : pauseGame()),
     });
-    game.safeTop = 0;
+    game.safeTop = safeTop();
+    window.addEventListener('resize', () => { if (game) game.safeTop = safeTop(); });
+    $('mp-hud').hidden = !mp.inRound;
+    $('p-restart').hidden = mp.inRound;
     game.start();
     spLoop();
     requestWakeLock();
@@ -282,29 +328,81 @@
   function spLoop() {
     if (!game || !game.running) return;
     $('btn-sp').classList.toggle('ready', game.energy >= 0.5 && !game.spActive);
+    if (mp.inRound) roomTick();
     requestAnimationFrame(spLoop);
   }
 
-  function pauseGame() {
+  // En multijugador la pausa es de toda la sala: quien pausa avisa a los demás (`by` = nombre de quien pausó en otro teléfono).
+  function pauseGame(by, at) {
     if (!game || game.finished) return;
-    game.pause();
+    const announce = typeof by !== 'string' && mp.inRound && room && (!game.paused || countdownTimer);
+    cancelCountdown();
+    game.pause(mp.inRound);
+    // El aviso llega un poco tarde: se vuelve al instante en que pausó el otro para que todos sigan alineados.
+    if (typeof at === 'number' && at < game.pausedAt && game.pausedAt - at < 0.5) game.pausedAt = at;
+    pausedAt = performance.now();
+    $('p-by').hidden = typeof by !== 'string';
+    $('p-by').textContent = typeof by === 'string' ? 'Pausó ' + by : '';
     show('pause');
+    if (announce) room.send({ t: 'pause', id: room.myId, by: room.name, at: game.pausedAt });
   }
-  function resumeGame() {
+  let pausedAt = 0;
+  // Ignora toques en los botones de la pausa justo después de abrirla (evita pulsaciones fantasma).
+  const pauseGuard = (fn) => (e) => { if (performance.now() - pausedAt < 350) return; fn(e); };
+  function resumeGame(by) {
     hide('pause');
-    if (game) game.resume();
+    if (!game) return;
+    if (!mp.inRound) { game.resume(); return; }
+    if (countdownTimer || !game.paused) return;
+    if (typeof by !== 'string') {
+      audio.unlock(); // dentro del toque: por si el sistema suspendió el audio
+      if (room) room.send({ t: 'resume', id: room.myId, by: room.name });
+    }
+    startCountdown();
+  }
+  // Cuenta atrás 3-2-1 para que todos los de la sala vuelvan a tocar a la vez.
+  let countdownTimer = null;
+  function startCountdown() {
+    const el = $('countdown');
+    let n = 3;
+    el.textContent = n;
+    el.hidden = false;
+    countdownTimer = setInterval(() => {
+      if (--n > 0) { el.textContent = n; return; }
+      cancelCountdown();
+      if (game) game.resume();
+    }, 1000);
+  }
+  function cancelCountdown() {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+    $('countdown').hidden = true;
   }
   function quitGame() {
     hide('pause'); hide('results');
-    if (game) { game.destroy(); game = null; }
-    releaseWakeLock();
-    exitFullscreen();
+    cancelCountdown();
+    startLockUntil = performance.now() + 1200;
+    const g = game, wasRound = mp.inRound;
+    try { audio.stop(); } catch (e) { /* nada */ }
+    try {
+      if (mp.inRound) {
+        if (g && !g.finished) room.send({ t: 'final', id: room.myId, score: Math.round(g.score), quit: true });
+        endRound();
+      }
+    } catch (e) { console.error(e); }
+    try { if (g) { g.destroy(); game = null; } } catch (e) { console.error(e); game = null; }
+    try { releaseWakeLock(); exitFullscreen(); } catch (e) { /* nada */ }
+    if (room && wasRound) { screen('menu'); refresh(); showRoom(); return; }
     screen('menu');
     refresh();
   }
 
   async function finish(r) {
     releaseWakeLock();
+    if (mp.inRound) roomFinish(r);
+    $('r-again').hidden = !!mp.inRound;
+    $('r-menu').textContent = mp.inRound ? 'Volver a la sala' : 'Biblioteca';
+    $('r-room').hidden = !mp.inRound;
     const key = scoreKey(current.song.id, current.inst, current.diff);
     const prev = scores[key];
     const isBest = !prev || r.score > prev.score;
@@ -395,7 +493,7 @@
         if (key === 'volume') audio.setVolume(settings.volume);
       };
     }
-    for (const [id, key] of [['s-lefty', 'lefty'], ['s-simple-chords', 'simpleChords'], ['s-miss', 'missSound'], ['s-vibrate', 'vibrate'], ['s-stage3d', 'stage3d']]) {
+    for (const [id, key] of [['s-lefty', 'lefty'], ['s-simple-chords', 'simpleChords'], ['s-miss', 'missSound'], ['s-vibrate', 'vibrate'], ['s-stage3d', 'stage3d'], ['s-cinema', 'cinema']]) {
       $(id).checked = !!settings[key];
       $(id).onchange = () => { settings[key] = $(id).checked; GH.settings.save(settings); };
     }
@@ -450,6 +548,347 @@
     toast('Calibración guardada: ' + settings.offsetMs + ' ms');
   }
 
+
+  // ---------- multijugador ----------
+  let room = null;
+  // song: canción elegida en la sala ({meta, hash}); local: la misma canción en este teléfono;
+  // prepared: notas listas para empezar; scores: id -> {score, final}.
+  const mp = { song: null, local: null, prepared: null, inRound: false, scores: {}, lastSent: 0, lastHud: 0, lastPct: -1 };
+
+  // En una sala, el anfitrión elige cualquier canción; los invitados solo la de la sala.
+  function forRoom(s) {
+    return !!room && (room.isHost || (!!mp.local && mp.local.id === s.id));
+  }
+
+  function openRoomSheet(code) {
+    $('room-name').value = settings.playerName || '';
+    if (code) $('room-code').value = code;
+    showRoom();
+  }
+
+  function showRoom() {
+    $('room-start').hidden = !!room;
+    $('room-in').hidden = !room;
+    if (room) renderRoom();
+    show('room');
+    updatePill();
+  }
+  function hideRoom() { hide('room'); updatePill(); }
+
+  function updatePill() {
+    const pill = $('room-pill');
+    const inGame = $('game').classList.contains('active');
+    pill.hidden = !room || inGame || !$('room').hidden;
+    if (room) pill.textContent = '👥 Sala ' + room.code + ' · ' + room.players.length;
+  }
+
+  function saveName() {
+    const n = $('room-name').value.trim();
+    settings.playerName = n;
+    GH.settings.save(settings);
+    return n || 'Jugador';
+  }
+
+  async function createRoom() {
+    if (!G.Peer) { toast('No se pudo cargar el módulo de salas.'); return; }
+    const r = new GH.Room(saveName());
+    loading('Creando sala…');
+    try { await r.host(); }
+    catch (e) { loading(null); toast(e.message, 6000); return; }
+    loading(null);
+    setRoom(r);
+  }
+
+  async function joinRoom(code) {
+    code = (code || $('room-code').value).trim().toUpperCase();
+    if (!/^[A-Z0-9]{5}$/.test(code)) { toast('El código de sala tiene 5 letras o números.'); return; }
+    if (!G.Peer) { toast('No se pudo cargar el módulo de salas.'); return; }
+    audio.unlock();
+    const r = new GH.Room(saveName());
+    loading('Entrando a la sala ' + code + '…');
+    try { await r.join(code); }
+    catch (e) { loading(null); toast(e.message, 7000); return; }
+    loading(null);
+    setRoom(r);
+    toast('¡Entraste a la sala ' + code + '!');
+  }
+
+  function setRoom(r) {
+    room = r;
+    Object.assign(mp, { song: null, local: null, prepared: null, inRound: false, scores: {} });
+    r.on('players', () => { renderRoom(); updatePill(); })
+      .on('joined', (n) => toast(n + ' entró a la sala'))
+      .on('left', (n) => toast(n + ' salió de la sala'))
+      .on('warn', (m) => console.warn(m))
+      .on('closed', (m) => { toast(m, 6000); dropRoom(); })
+      .on('song', onRoomSong)
+      .on('progress', onRoomProgress)
+      .on('received', onRoomReceived)
+      .on('start', (m) => scheduleRound(m.in))
+      .on('score', (m) => { mp.scores[m.id] = { score: m.score, final: false }; })
+      .on('pause', (m) => { if (game && mp.inRound && !game.finished) pauseGame(String(m.by || 'otro jugador'), Number(m.at)); })
+      .on('resume', (m) => { if (game && mp.inRound && game.paused) resumeGame(String(m.by || 'otro jugador')); })
+      .on('final', (m) => { mp.scores[m.id] = { score: m.score, final: true, quit: m.quit, acc: m.acc, stars: m.stars }; renderRank(); });
+    showRoom();
+  }
+
+  function leaveRoom() {
+    if (room) room.leave();
+    dropRoom();
+    hideRoom();
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  }
+
+  function dropRoom() {
+    room = null;
+    mp.inRound = false;
+    mp.song = mp.local = mp.prepared = null;
+    $('mp-hud').hidden = true;
+    if (!$('room').hidden) showRoom();
+    updatePill();
+  }
+
+  const STATE_TEXT = { lobby: 'esperando canción', choosing: 'eligiendo instrumento', loading: 'cargando…', ready: 'listo', playing: 'tocando', done: 'terminó' };
+  function stateText(p) {
+    if (p.state === 'downloading') return 'recibiendo canción ' + Math.round((p.pct || 0) * 100) + '%';
+    if (p.state === 'ready' && p.inst) return 'listo · ' + GH.INSTRUMENTS[p.inst] + ' ' + GH.DIFF_LABELS[p.diff];
+    return STATE_TEXT[p.state] || p.state || '';
+  }
+
+  function renderRoom() {
+    if (!room) return;
+    $('room-code-show').textContent = room.code;
+    $('room-share-row').hidden = !room.isHost;
+    const ul = $('room-players');
+    ul.innerHTML = '';
+    room.players.forEach((p, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<div class="who"><b></b><span class="tag"></span></div>';
+      li.querySelector('b').textContent = p.name + (i === 0 ? ' 👑' : '') + (p.id === room.myId ? ' (tú)' : '');
+      const tag = li.querySelector('.tag');
+      tag.textContent = stateText(p);
+      tag.classList.toggle('ok', p.state === 'ready');
+      ul.appendChild(li);
+    });
+    const meta = mp.song && mp.song.meta;
+    $('room-song').textContent = meta ? meta.name + (meta.artist ? ' · ' + meta.artist : '') : room.isHost ? 'Elige qué canción van a tocar.' : 'El anfitrión está eligiendo la canción.';
+    const pick = $('room-pick');
+    if (room.isHost) { pick.textContent = meta ? 'Cambiar canción' : 'Elegir canción'; pick.disabled = false; }
+    else { pick.textContent = mp.prepared ? 'Cambiar instrumento' : 'Elegir instrumento'; pick.disabled = !mp.local; }
+    const go = $('room-go');
+    go.hidden = !room.isHost;
+    const allReady = room.players.length > 1 && room.players.every((p) => p.state === 'ready');
+    go.disabled = !allReady || !mp.prepared;
+    go.textContent = room.players.length < 2 ? 'Esperando jugadores…' : allReady ? '¡Empezar!' : 'Esperando a que todos estén listos…';
+  }
+
+  function setMyState(state, extra) {
+    const me = room.players.find((p) => p.id === room.myId);
+    if (room.isHost) {
+      if (me) { Object.assign(me, { state, inst: undefined, diff: undefined, pct: undefined }, extra || {}); room._sendPlayers(); }
+    } else {
+      room.send(Object.assign({ t: 'state', state, inst: null, diff: null }, extra || {}));
+    }
+  }
+
+  function roomPick() {
+    if (!room) return;
+    if (room.isHost) { hideRoom(); openTab('setlist'); screen('menu'); refresh(); toast('Toca la canción que van a tocar.'); }
+    else if (mp.local) { hideRoom(); openDetail(mp.local); }
+  }
+
+  // "Listo" en la ficha: el anfitrión además elige la canción para todos.
+  async function roomReady() {
+    const { song, inst, diff } = current;
+    rememberChoice(inst, diff);
+    audio.unlock();
+    hide('detail');
+    if (room.isHost && !(mp.song && mp.song.meta.id === song.id)) {
+      loading('Preparando la canción para la sala…');
+      let files = null, hash = null;
+      try {
+        if (!song.builtin) { files = await GH.store.getFiles(song.id); hash = await GH.notesHash(files); }
+      } catch (e) { loading(null); toast('No se pudo leer la canción: ' + (e.message || e)); return; }
+      const { files: _f, ...meta } = song;
+      mp.song = { meta, hash };
+      mp.local = song;
+      mp.prepared = null;
+      room.setSong(mp.song, files);
+    }
+    setMyState('loading');
+    try { mp.prepared = await prepareSong(song, inst, diff); }
+    catch (e) { loading(null); toast('Error: ' + (e.message || e), 6000); setMyState('choosing'); return; }
+    await prepareStage3D();
+    mp.prepared.inst = inst;
+    setMyState('ready', { inst, diff });
+    showRoom();
+  }
+
+  async function onRoomSong(s) {
+    mp.song = s;
+    mp.local = null;
+    mp.prepared = null;
+    renderRoom();
+    const local = await findLocal(s);
+    if (mp.song !== s) return;
+    if (local) {
+      mp.local = local;
+      setMyState('choosing');
+      renderRoom();
+      roomPick();
+      toast('Canción elegida: ' + s.meta.name + '. Elige tu instrumento.');
+    } else {
+      mp.lastPct = -1;
+      setMyState('downloading', { pct: 0 });
+      room.send({ t: 'need' });
+      toast('Recibiendo ' + s.meta.name + ' del anfitrión…');
+    }
+  }
+
+  async function findLocal(s) {
+    if (s.meta.builtin) return GH.SAMPLE_SONG;
+    const list = await GH.store.listSongs().catch(() => []);
+    const byId = list.find((x) => x.id === s.meta.id);
+    if (byId) return byId;
+    const norm = (x) => [x.artist, x.name, x.charter].map((v) => (v || '').toLowerCase().replace(/\s+/g, ' ').trim()).join('|');
+    for (const cand of list.filter((x) => norm(x) === norm(s.meta))) {
+      if (!s.hash) return cand;
+      const files = await GH.store.getFiles(cand.id).catch(() => null);
+      if (files && (await GH.notesHash(files)) === s.hash) return cand;
+    }
+    return null;
+  }
+
+  function onRoomProgress(pct) {
+    const step = Math.floor(pct * 10);
+    if (step !== mp.lastPct) { mp.lastPct = step; setMyState('downloading', { pct }); }
+  }
+
+  async function onRoomReceived(song) {
+    if (!mp.song || song.id !== mp.song.meta.id) return;
+    try {
+      await GH.store.addSong(song);
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    } catch (e) { toast('No se pudo guardar la canción: ' + (e.message || e), 6000); return; }
+    const { files, ...meta } = song;
+    mp.local = meta;
+    setMyState('choosing');
+    refresh();
+    renderRoom();
+    toast('Canción recibida y guardada en tu biblioteca. Elige tu instrumento.');
+    roomPick();
+  }
+
+  async function roomStart() {
+    if (!room || !room.isHost || !mp.prepared) return;
+    $('room-go').disabled = true;
+    const lead = await room.startAll(1500);
+    scheduleRound(lead);
+  }
+
+  function scheduleRound(ms) {
+    if (!mp.prepared) { toast('Tu canción no estaba lista.'); return; }
+    hideRoom();
+    hide('detail');
+    mp.scores = {};
+    mp.inRound = true;
+    setTimeout(() => {
+      if (!room || !mp.prepared) return;
+      setMyState('playing');
+      const pl = mp.prepared;
+      mp.prepared = null;
+      enterGame(pl);
+    }, ms);
+  }
+
+  function roomTick() {
+    const now = performance.now();
+    if (now - mp.lastSent > 300 && room) {
+      mp.lastSent = now;
+      room.send({ t: 'score', id: room.myId, score: Math.round(game.score) });
+    }
+    if (now - mp.lastHud > 250) { mp.lastHud = now; renderHud(); }
+  }
+
+  function standings() {
+    if (!room) return [];
+    const rows = room.players.map((p) => {
+      const mine = p.id === room.myId;
+      const sc = mine ? { score: game ? Math.round(game.score) : 0, final: game && game.finished } : mp.scores[p.id] || { score: 0 };
+      return { name: p.name, me: mine, score: sc.score || 0, final: sc.final, quit: sc.quit };
+    });
+    return rows.sort((a, b) => b.score - a.score);
+  }
+
+  function renderHud() {
+    const ol = $('mp-hud');
+    ol.innerHTML = '';
+    for (const r of standings()) {
+      const li = document.createElement('li');
+      li.className = r.me ? 'me' : '';
+      li.innerHTML = '<span></span><b></b>';
+      li.firstChild.textContent = r.name;
+      li.lastChild.textContent = r.score.toLocaleString('es');
+      ol.appendChild(li);
+    }
+  }
+
+  function roomFinish(r) {
+    room && room.send({ t: 'final', id: room.myId, score: r.score, acc: r.accuracy, stars: r.stars });
+    setMyState('done');
+    renderRank();
+  }
+
+  function renderRank() {
+    const ol = $('r-room');
+    if (!room || ol.hidden && !mp.inRound) return;
+    const rows = standings();
+    ol.innerHTML = '';
+    const allDone = rows.every((r) => r.final || r.quit);
+    rows.forEach((r, i) => {
+      const li = document.createElement('li');
+      li.className = (r.me ? 'me ' : '') + (i === 0 && allDone ? 'win' : '');
+      li.innerHTML = '<span></span><b></b>';
+      li.firstChild.textContent = (i === 0 && allDone ? '🏆 ' : (i + 1) + '. ') + r.name;
+      li.lastChild.textContent = r.quit ? 'abandonó' : r.final ? r.score.toLocaleString('es') : 'tocando… ' + r.score.toLocaleString('es');
+      ol.appendChild(li);
+    });
+  }
+
+  function endRound() {
+    mp.inRound = false;
+    $('mp-hud').hidden = true;
+    if (room) { setMyState(mp.local ? 'choosing' : 'lobby'); }
+  }
+
+  function roomLinkText() {
+    return '¡Toca conmigo en Frets! Entra a mi sala: ' + room.link;
+  }
+
+  function bindRoom() {
+    $('btn-multi').onclick = () => openRoomSheet();
+    $('room-create').onclick = createRoom;
+    $('room-join').onclick = () => joinRoom();
+    $('room-code').onkeydown = (e) => { if (e.key === 'Enter') joinRoom(); };
+    $('room-close').onclick = hideRoom;
+    $('room-hide').onclick = hideRoom;
+    $('room-leave').onclick = leaveRoom;
+    $('room-pill').onclick = showRoom;
+    $('room-pick').onclick = roomPick;
+    $('room-go').onclick = roomStart;
+    $('room-wa').onclick = () => { window.open('https://wa.me/?text=' + encodeURIComponent(roomLinkText()), '_blank'); };
+    $('room-copy').onclick = async () => {
+      try { await navigator.clipboard.writeText(room.link); toast('Link copiado.'); }
+      catch (e) { toast(room.link, 8000); }
+    };
+    const fromHash = () => {
+      const m = /sala=([A-Za-z0-9]{5})/.exec(location.hash);
+      if (m && !room) openRoomSheet(m[1].toUpperCase());
+    };
+    window.addEventListener('hashchange', fromHash);
+    fromHash();
+  }
+
   // ---------- arranque ----------
   function openTab(tab) {
     $('panel-setlist').hidden = tab !== 'setlist';
@@ -458,7 +897,55 @@
     $('paper').scrollTop = 0;
   }
 
+  function openTouchDiag() {
+    const root = $('touch-diag'), rows = $('td-rows'), info = $('td-info'), dot = $('td-dot');
+    rows.innerHTML = '';
+    for (let y = 0; y < innerHeight; y += 100) { const b = document.createElement('b'); b.style.top = y + 2 + 'px'; b.textContent = 'y=' + y; rows.appendChild(b); }
+    const vv = window.visualViewport;
+    const show = (e) => {
+      if (e) { dot.style.display = 'block'; dot.style.left = e.clientX + 'px'; dot.style.top = e.clientY + 'px'; }
+      info.textContent = 'Toca la pantalla: el círculo debe quedar justo bajo tu dedo.\n' +
+        (e ? 'clientX/Y: ' + Math.round(e.clientX) + ' / ' + Math.round(e.clientY) + '\n' : '') +
+        'innerW/H: ' + innerWidth + ' / ' + innerHeight + '\n' +
+        'scrollX/Y: ' + Math.round(scrollX) + ' / ' + Math.round(scrollY) + '\n' +
+        (vv ? 'visualViewport offsetTop/pageTop/scale/height: ' + [vv.offsetTop, vv.pageTop, vv.scale, vv.height].map((n) => +n.toFixed(1)).join(' / ') + '\n' : '') +
+        'screen: ' + window.screen.width + 'x' + window.screen.height + ' dpr ' + devicePixelRatio + '\n' +
+        '--safe-top: ' + getComputedStyle(document.documentElement).getPropertyValue('--safe-top');
+    };
+    root.onpointerdown = root.onpointermove = (e) => { if (e.target.id !== 'td-close') show(e); };
+    dot.style.display = 'none';
+    show(null);
+    root.hidden = false;
+  }
+
+  // Decorado del menú principal: barras del ecualizador, chispas y opción resaltada.
+  function decorateHome() {
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const eq = $('hs-eq');
+    for (let i = 0; i < 28; i++) {
+      const b = document.createElement('i');
+      b.style.cssText = `--t:${rnd(0.28, 0.7).toFixed(2)}s;--d:${rnd(-1, 0).toFixed(2)}s;--h:${rnd(0.35, 1).toFixed(2)}`;
+      eq.appendChild(b);
+    }
+    const sparks = $('hs-sparks');
+    for (let i = 0; i < 16; i++) {
+      const s = document.createElement('i');
+      s.style.cssText = `--x:${rnd(0, 100).toFixed(1)}%;--s:${rnd(2, 4.5).toFixed(1)}px;--t:${rnd(4, 8).toFixed(1)}s;--d:${rnd(-8, 0).toFixed(1)}s;--dx:${rnd(-40, 40).toFixed(0)}px`;
+      sparks.appendChild(s);
+    }
+    const items = Array.from(document.querySelectorAll('.hm'));
+    const select = (b) => items.forEach((x) => x.classList.toggle('sel', x === b));
+    items.forEach((b) => {
+      b.addEventListener('pointerenter', () => select(b));
+      b.addEventListener('pointerdown', () => select(b));
+      b.addEventListener('focus', () => select(b));
+    });
+  }
+
   function init() {
+    decorateHome();
+    safeTop();
+    window.addEventListener('resize', safeTop);
     document.querySelectorAll('.tab').forEach((t) => { t.onclick = () => openTab(t.dataset.tab); });
     $('btn-home').onclick = () => screen('home');
     document.addEventListener('keydown', (e) => {
@@ -480,7 +967,7 @@
     $('search').oninput = renderList;
     $('d-close').onclick = () => hide('detail');
     $('detail').onclick = (e) => { if (e.target.id === 'detail') hide('detail'); };
-    $('d-play').onclick = startGame;
+    $('d-play').onclick = () => (forRoom(current.song) ? roomReady() : startGame());
     $('d-delete').onclick = async () => {
       const btn = $('d-delete');
       // Confirmación en dos toques (los diálogos nativos no siempre están disponibles).
@@ -496,16 +983,28 @@
       hide('detail');
       refresh();
     };
-    $('btn-pause').onclick = pauseGame;
+    // pointerdown responde al instante y no depende de que iOS genere el "click"
+    for (const id of ['btn-pause']) {
+      const b = $(id);
+      b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); pauseGame(); });
+      b.onclick = pauseGame;
+    }
     $('btn-sp').onclick = () => game && game.activateSP();
-    $('p-resume').onclick = resumeGame;
-    $('p-restart').onclick = () => { hide('pause'); game.paused = false; audio.resume().then(() => game.restart()); };
-    $('p-quit').onclick = quitGame;
+    $('p-resume').onclick = pauseGuard(resumeGame);
+    $('p-restart').onclick = pauseGuard(() => { if (performance.now() < startLockUntil) return; hide('pause'); audio.resume().then(() => game.restart()); });
+    $('p-quit').onclick = pauseGuard(quitGame);
     $('r-again').onclick = () => { hide('results'); audio.unlock(); enterGame(game.play); };
     $('r-menu').onclick = quitGame;
+    bindRoom();
     $('btn-settings').onclick = () => { bindSettings(); renderBandList(); show('settings'); };
     $('s-close').onclick = () => hide('settings');
     $('s-calibrate').onclick = startCalibration;
+    $('s-touchdiag').onclick = openTouchDiag;
+    $('td-close').onclick = () => { $('touch-diag').hidden = true; };
+    // La página nunca debe desplazarse: en iPhone un desplazamiento invisible descuadra los toques.
+    const unscroll = () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); };
+    window.addEventListener('scroll', unscroll, { passive: true });
+    if (window.visualViewport) window.visualViewport.addEventListener('scroll', unscroll);
     $('calib-pad').addEventListener('pointerdown', calibTap);
     $('calib-cancel').onclick = () => endCalibration(true);
     document.addEventListener('visibilitychange', () => { if (document.hidden && game && game.running) pauseGame(); });

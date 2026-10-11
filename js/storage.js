@@ -89,7 +89,7 @@
     },
   };
 
-  const DEFAULTS = { stage3d: true, noteSpeed: 1, offsetMs: 0, windowMs: 90, lefty: false, simpleChords: true, vibrate: true, volume: 0.9, missSound: true };
+  const DEFAULTS = { stage3d: true, cinema: true, noteSpeed: 1, offsetMs: 0, windowMs: 90, lefty: false, simpleChords: true, vibrate: true, volume: 0.9, missSound: true };
   GH.settings = {
     load() {
       try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('gh-settings') || '{}')); }

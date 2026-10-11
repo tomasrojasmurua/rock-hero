@@ -117,17 +117,14 @@
     let prev = null;
     for (const g of groups) {
       // En guitarra, una nota abierta junto a trastes se trata como acorde normal.
-      const open = isDrums ? g.open && !g.lanes.length : g.open && !g.lanes.length;
+      // En batería, el bombo junto a un tambor se descarta: en pantalla táctil el bombo se toca
+      // con cualquier carril, así que pediría dos toques simultáneos. Queda solo el tambor.
+      const open = g.open && !g.lanes.length;
       let lanes = open ? [] : g.lanes.slice();
       // Acordes simplificados: en guitarra, 3+ notas se reducen a las dos de los extremos.
       if (!isDrums && opts.maxChordNotes && lanes.length > opts.maxChordNotes) {
         lanes.sort((a, b) => a - b);
         lanes = [lanes[0], lanes[lanes.length - 1]];
-      }
-      if (isDrums && g.open && g.lanes.length) {
-        // Batería: el bombo junto a otros golpes se juega como un golpe más en cualquier carril;
-        // lo separamos como nota abierta propia en el mismo instante.
-        out.push(makeGroup(g.tick, [], true, 0, false, false));
       }
       let hopo = false, tap = false;
       if (!isDrums) {
@@ -171,5 +168,99 @@
 
     const sections = (song.sections || []).map((s) => ({ time: tm.tickToTime(s.tick), name: s.name }));
     return { notes: out, tempoMap: tm, sections, instrument, diff };
+  };
+
+  // ---------- dificultades generadas ----------
+  // Si una canción no trae Difícil, Medio o Fácil, se crean a partir de la dificultad
+  // más alta disponible: menos notas (se priorizan las que caen en el pulso), menos
+  // carriles y acordes más pequeños.
+  const REDUCE = {
+    hard: { minTicks: 1 / 4, minSec: 0.16, chord: 3, map: [0, 1, 2, 3, 4], pads: 2 },
+    medium: { minTicks: 1 / 2, minSec: 0.22, chord: 2, map: [0, 1, 2, 3, 3], pads: 1 },
+    easy: { minTicks: 1, minSec: 0.38, chord: 1, map: [0, 1, 1, 2, 2], pads: 1 },
+  };
+
+  // Dificultades que se pueden jugar: las que trae el archivo y, por debajo de la más
+  // alta, las que se generan. Devuelve [{diff, auto}] de más difícil a más fácil.
+  GH.playableDiffs = function (have) {
+    const top = GH.DIFFS.findIndex((d) => have.includes(d));
+    if (top < 0) return [];
+    return GH.DIFFS.slice(top).map((d) => ({ diff: d, auto: !have.includes(d) }));
+  };
+
+  GH.reduceTrack = function (src, diff, tm) {
+    const cfg = REDUCE[diff];
+    const res = tm.res;
+    const drums = !!src.drums;
+    const byTick = new Map();
+    for (const n of src.notes) {
+      let g = byTick.get(n.tick);
+      if (!g) byTick.set(n.tick, (g = { tick: n.tick, lanes: [], open: false, len: 0 }));
+      if (n.lane === GH.OPEN) g.open = true;
+      else if (!g.lanes.includes(n.lane)) g.lanes.push(n.lane);
+      g.len = Math.max(g.len, n.len || 0);
+    }
+    const groups = [...byTick.values()].sort((a, b) => a.tick - b.tick);
+    for (const g of groups) {
+      g.time = tm.tickToTime(g.tick);
+      const beat = g.tick % res === 0 ? 4 : g.tick % (res / 2) === 0 ? 3 : g.tick % (res / 4) === 0 ? 2 : 1;
+      g.weight = beat + (g.lanes.length > 1 ? 0.5 : 0) + (g.len > 0 ? 0.5 : 0);
+    }
+
+    // Selección: primero las notas más fuertes, descartando las que quedan demasiado cerca.
+    const minTicks = res * cfg.minTicks;
+    const order = groups.map((g, i) => i).sort((a, b) => groups[b].weight - groups[a].weight || a - b);
+    const keep = new Uint8Array(groups.length);
+    const tooClose = (i, j) => Math.abs(groups[i].tick - groups[j].tick) < minTicks ||
+      Math.abs(groups[i].time - groups[j].time) < cfg.minSec;
+    for (const i of order) {
+      let ok = true;
+      for (let j = i - 1; j >= 0 && groups[i].tick - groups[j].tick < minTicks * 8; j--) if (keep[j] && tooClose(i, j)) { ok = false; break; }
+      for (let j = i + 1; ok && j < groups.length && groups[j].tick - groups[i].tick < minTicks * 8; j++) if (keep[j] && tooClose(i, j)) { ok = false; break; }
+      if (ok) keep[i] = 1;
+    }
+    const kept = groups.filter((g, i) => keep[i]);
+
+    const notes = [];
+    kept.forEach((g, k) => {
+      const next = kept[k + 1];
+      let len = g.len;
+      // Un sostenido no puede tapar la nota siguiente.
+      if (len && next) len = Math.max(0, Math.min(len, next.tick - g.tick - res / 4));
+      if (drums) {
+        const pads = g.lanes.slice().sort((a, b) => a - b).slice(0, cfg.pads);
+        for (const l of pads) notes.push({ tick: g.tick, lane: l, len: 0 });
+        if (g.open && (diff !== 'easy' || !pads.length)) notes.push({ tick: g.tick, lane: GH.OPEN, len: 0 });
+        return;
+      }
+      if (g.open && !g.lanes.length) { notes.push({ tick: g.tick, lane: GH.OPEN, len }); return; }
+      let lanes = [...new Set(g.lanes.map((l) => cfg.map[l]))].sort((a, b) => a - b);
+      if (lanes.length > cfg.chord) lanes = cfg.chord === 1 ? [lanes[0]] : lanes.slice(0, cfg.chord - 1).concat(lanes[lanes.length - 1]);
+      for (const l of lanes) notes.push({ tick: g.tick, lane: l, len });
+    });
+
+    return {
+      notes, sp: src.sp || [], drums, generated: true,
+      flipTicks: new Set(),
+      tapTicks: diff === 'hard' ? new Set([...(src.tapTicks || [])].filter((t) => byTick.has(t))) : new Set(),
+      hopoRanges: diff === 'hard' ? src.hopoRanges || [] : [],
+      strumRanges: src.strumRanges || [],
+      tapRanges: diff === 'hard' ? src.tapRanges || [] : [],
+    };
+  };
+
+  // Completa en la canción ya leída las dificultades que falten, cada una a partir
+  // de la inmediatamente más difícil (que puede ser real o generada).
+  GH.fillDifficulties = function (song) {
+    const tm = new TempoMap(song.resolution, song.tempos, song.timeSigs, song.offset);
+    for (const inst of Object.keys(song.tracks)) {
+      const t = song.tracks[inst];
+      for (const { diff, auto } of GH.playableDiffs(Object.keys(t))) {
+        if (!auto) continue;
+        const src = t[GH.DIFFS[GH.DIFFS.indexOf(diff) - 1]];
+        t[diff] = GH.reduceTrack(src, diff, tm);
+      }
+    }
+    return song;
   };
 })(typeof window !== 'undefined' ? window : globalThis);
