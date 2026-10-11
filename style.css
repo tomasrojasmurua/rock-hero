@@ -483,6 +483,13 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 .room-rank li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; border-radius: 10px; background: var(--panel-2); }
 .room-rank li.me { outline: 1px solid var(--accent); }
 .room-rank li.win b { color: #fbbf24; }
+.leaderboard { list-style: none; padding: 0; margin: 8px 0 4px; display: grid; gap: 4px; text-align: left; font-size: 14px; }
+.leaderboard li { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-radius: 10px; background: var(--panel-2); }
+.leaderboard li.me { outline: 1px solid var(--accent); }
+.leaderboard .lb-pos { width: 1.2em; font-weight: 800; color: var(--muted); }
+.leaderboard li:first-child .lb-pos { color: #fbbf24; }
+.leaderboard .lb-who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.leaderboard .lb-acc { color: var(--muted); font-size: 12px; }
 
 .btn.subtle { margin-top: 26px; min-height: 40px; font-size: 13px; opacity: .75; }
 #p-quit { min-height: 56px; font-size: 17px; }
