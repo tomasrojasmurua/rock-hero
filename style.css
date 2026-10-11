@@ -132,6 +132,12 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 #btn-sp { top: calc(72px + var(--safe-top)); font-size: 20px; opacity: 0.35; }
 #btn-sp.ready { opacity: 1; border-color: var(--sp); box-shadow: 0 0 16px var(--sp); animation: pulse 0.8s infinite alternate; }
 @keyframes pulse { to { transform: scale(1.08); } }
+/* Cuenta atrás al reanudar una partida multijugador */
+#countdown {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 3; pointer-events: none;
+  font-size: 120px; font-weight: 800; color: #fff; text-shadow: 0 0 24px var(--accent), 0 4px 0 #000;
+}
+#countdown[hidden] { display: none; }
 
 #calib-pad { min-height: 60vh; touch-action: manipulation; }
 .beat-dot { width: 90px; height: 90px; border-radius: 50%; margin: 30px auto; background: var(--panel-2); transition: background 0.05s; }

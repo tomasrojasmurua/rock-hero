@@ -117,13 +117,10 @@
     let prev = null;
     for (const g of groups) {
       // En guitarra, una nota abierta junto a trastes se trata como acorde normal.
-      const open = isDrums ? g.open && !g.lanes.length : g.open && !g.lanes.length;
+      // En batería, el bombo junto a un tambor se descarta: en pantalla táctil el bombo se toca
+      // con cualquier carril, así que pediría dos toques simultáneos. Queda solo el tambor.
+      const open = g.open && !g.lanes.length;
       const lanes = open ? [] : g.lanes.slice();
-      if (isDrums && g.open && g.lanes.length) {
-        // Batería: el bombo junto a otros golpes se juega como un golpe más en cualquier carril;
-        // lo separamos como nota abierta propia en el mismo instante.
-        out.push(makeGroup(g.tick, [], true, 0, false, false));
-      }
       let hopo = false, tap = false;
       if (!isDrums) {
         const single = lanes.length === 1 || open;

@@ -313,7 +313,7 @@
     game = new GH.Game({
       canvas: $('canvas'), audio, settings, playable, stage3d,
       onEnd: finish,
-      onPauseRequest: () => (game.paused ? resumeGame() : pauseGame()),
+      onPauseRequest: () => (game.paused && !countdownTimer ? resumeGame() : pauseGame()),
     });
     game.safeTop = safeTop();
     window.addEventListener('resize', () => { if (game) game.safeTop = safeTop(); });
@@ -331,21 +331,55 @@
     requestAnimationFrame(spLoop);
   }
 
-  function pauseGame() {
+  // En multijugador la pausa es de toda la sala: quien pausa avisa a los demás (`by` = nombre de quien pausó en otro teléfono).
+  function pauseGame(by, at) {
     if (!game || game.finished) return;
-    game.pause();
+    const announce = typeof by !== 'string' && mp.inRound && room && (!game.paused || countdownTimer);
+    cancelCountdown();
+    game.pause(mp.inRound);
+    // El aviso llega un poco tarde: se vuelve al instante en que pausó el otro para que todos sigan alineados.
+    if (typeof at === 'number' && at < game.pausedAt && game.pausedAt - at < 0.5) game.pausedAt = at;
     pausedAt = performance.now();
+    $('p-by').hidden = typeof by !== 'string';
+    $('p-by').textContent = typeof by === 'string' ? 'Pausó ' + by : '';
     show('pause');
+    if (announce) room.send({ t: 'pause', id: room.myId, by: room.name, at: game.pausedAt });
   }
   let pausedAt = 0;
   // Ignora toques en los botones de la pausa justo después de abrirla (evita pulsaciones fantasma).
   const pauseGuard = (fn) => (e) => { if (performance.now() - pausedAt < 350) return; fn(e); };
-  function resumeGame() {
+  function resumeGame(by) {
     hide('pause');
-    if (game) game.resume();
+    if (!game) return;
+    if (!mp.inRound) { game.resume(); return; }
+    if (countdownTimer || !game.paused) return;
+    if (typeof by !== 'string') {
+      audio.unlock(); // dentro del toque: por si el sistema suspendió el audio
+      if (room) room.send({ t: 'resume', id: room.myId, by: room.name });
+    }
+    startCountdown();
+  }
+  // Cuenta atrás 3-2-1 para que todos los de la sala vuelvan a tocar a la vez.
+  let countdownTimer = null;
+  function startCountdown() {
+    const el = $('countdown');
+    let n = 3;
+    el.textContent = n;
+    el.hidden = false;
+    countdownTimer = setInterval(() => {
+      if (--n > 0) { el.textContent = n; return; }
+      cancelCountdown();
+      if (game) game.resume();
+    }, 1000);
+  }
+  function cancelCountdown() {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+    $('countdown').hidden = true;
   }
   function quitGame() {
     hide('pause'); hide('results');
+    cancelCountdown();
     startLockUntil = performance.now() + 1200;
     const g = game, wasRound = mp.inRound;
     try { audio.stop(); } catch (e) { /* nada */ }
@@ -458,7 +492,7 @@
         if (key === 'volume') audio.setVolume(settings.volume);
       };
     }
-    for (const [id, key] of [['s-lefty', 'lefty'], ['s-miss', 'missSound'], ['s-vibrate', 'vibrate'], ['s-stage3d', 'stage3d']]) {
+    for (const [id, key] of [['s-lefty', 'lefty'], ['s-miss', 'missSound'], ['s-vibrate', 'vibrate'], ['s-stage3d', 'stage3d'], ['s-cinema', 'cinema']]) {
       $(id).checked = !!settings[key];
       $(id).onchange = () => { settings[key] = $(id).checked; GH.settings.save(settings); };
     }
@@ -591,6 +625,8 @@
       .on('received', onRoomReceived)
       .on('start', (m) => scheduleRound(m.in))
       .on('score', (m) => { mp.scores[m.id] = { score: m.score, final: false }; })
+      .on('pause', (m) => { if (game && mp.inRound && !game.finished) pauseGame(String(m.by || 'otro jugador'), Number(m.at)); })
+      .on('resume', (m) => { if (game && mp.inRound && game.paused) resumeGame(String(m.by || 'otro jugador')); })
       .on('final', (m) => { mp.scores[m.id] = { score: m.score, final: true, quit: m.quit, acc: m.acc, stars: m.stars }; renderRank(); });
     showRoom();
   }
@@ -954,7 +990,7 @@
     }
     $('btn-sp').onclick = () => game && game.activateSP();
     $('p-resume').onclick = pauseGuard(resumeGame);
-    $('p-restart').onclick = pauseGuard(() => { if (performance.now() < startLockUntil) return; hide('pause'); game.paused = false; audio.resume().then(() => game.restart()); });
+    $('p-restart').onclick = pauseGuard(() => { if (performance.now() < startLockUntil) return; hide('pause'); audio.resume().then(() => game.restart()); });
     $('p-quit').onclick = pauseGuard(quitGame);
     $('r-again').onclick = () => { hide('results'); audio.unlock(); enterGame(game.play); };
     $('r-menu').onclick = quitGame;

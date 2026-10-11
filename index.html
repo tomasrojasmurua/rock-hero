@@ -117,6 +117,7 @@
     <button id="btn-pause" class="hud-btn" aria-label="Pausa">❚❚</button>
     <button id="btn-sp" class="hud-btn sp" aria-label="Poder estelar">⚡</button>
     <ol id="mp-hud" hidden></ol>
+    <div id="countdown" hidden></div>
   </section>
 
   <!-- Detalle de canción -->
@@ -185,6 +186,7 @@
   <div id="pause" class="sheet" hidden>
     <div class="sheet-card center">
       <h2>Pausa</h2>
+      <p id="p-by" class="muted" hidden></p>
       <button id="p-resume" class="btn primary wide">Continuar</button>
       <button id="p-quit" class="btn wide">Salir al menú</button>
       <button id="p-restart" class="btn wide subtle">Reiniciar canción</button>
@@ -232,6 +234,7 @@
       <label class="check"><input id="s-vibrate" type="checkbox"> Vibrar al fallar</label>
       <h3>Banda en 3D</h3>
       <label class="check"><input id="s-stage3d" type="checkbox"> Mostrar escenario 3D con la banda</label>
+      <label class="check"><input id="s-cinema" type="checkbox"> Cámara con cortes y primeros planos</label>
       <p class="muted small">Puedes cambiar cada músico provisional por un modelo 3D (.glb, idealmente con su animación incluida). Se guarda solo en este teléfono.</p>
       <ul id="band-list" class="band-list"></ul>
       <p class="muted small">Si usas auriculares Bluetooth, calibra: suelen tener 150–300 ms de retraso. Con teclado físico: A S D F G (o 1–5) y espacio para el poder estelar.</p>

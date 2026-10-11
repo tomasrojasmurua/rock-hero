@@ -13,12 +13,18 @@
       this.settings = opts.settings;
       this.play = opts.playable;
       this.notes = this.play.notes;
+      // Medio y Fácil se juegan con 4 botones (sin el naranja) salvo que el chart use ese carril.
+      let maxLane = -1;
+      for (const n of this.notes) if (!n.open) for (const l of n.lanes) if (l > maxLane) maxLane = l;
+      this.nLanes = (this.play.diff === 'medium' || this.play.diff === 'easy') && maxLane < 4 ? 4 : 5;
       this.tm = this.play.tempoMap;
       this.onEnd = opts.onEnd;
       this.onPauseRequest = opts.onPauseRequest;
       this.audioDelay = opts.audioDelay || 0;
       this.stage3d = opts.stage3d || null;
       this.win = (this.settings.windowMs || 90) / 1000;
+      this._pauseTotal = 0; // ms que el juego pasó en pausa (no cuentan para las animaciones)
+      this._pausedPerf = 0;
       this.look = 1.6 / (this.settings.noteSpeed || 1);
       this.reset();
 
@@ -46,7 +52,9 @@
       this.messages = [];
       this.lastTick = null;
       this.finished = false;
+      if (this.paused) this._pauseTotal += performance.now() - this._pausedPerf;
       this.paused = false;
+      this.resuming = false;
       this.leadMuted = false;
       const last = this.notes.length ? Math.max(...this.notes.map((n) => n.endTime)) : 0;
       this.lastNoteEnd = last;
@@ -75,18 +83,35 @@
       this._unbind();
     }
 
-    pause() {
+    // Reloj de las animaciones (ms): igual que performance.now() pero detenido mientras el juego está en pausa.
+    now() { return (this.paused ? this._pausedPerf : performance.now()) - this._pauseTotal; }
+
+    // En pausa se congela todo: se paran las pistas y el reloj de la canción queda fijo en `pausedAt`.
+    // `keepCtx`: no suspende el contexto de audio (en multijugador se reanuda sin un toque, y iOS podría no dejarlo).
+    pause(keepCtx) {
       if (this.paused || this.finished) return;
-      this.paused = true;
+      this.audio.tick();
       this.pausedAt = this.audio.songTime();
-      this.audio.pause();
+      this._pausedPerf = performance.now();
+      this.paused = true;
+      this.resuming = false;
+      this.audio.stop();
+      if (!keepCtx) this.audio.pause();
       this.pointers.clear();
       this.laneDown = [0, 0, 0, 0, 0];
     }
     resume() {
-      if (!this.paused) return;
-      this.paused = false;
-      this.audio.resume();
+      if (!this.paused || this.resuming) return;
+      this.resuming = true;
+      // Se espera a que el contexto de audio vuelva a correr antes de reprogramar las pistas desde `pausedAt`.
+      Promise.resolve(this.audio.resume()).catch(() => {}).then(() => {
+        if (!this.resuming || !this.paused || !this.running) return;
+        this.resuming = false;
+        this.audio.startAt(this.pausedAt, this.audioDelay);
+        if (this.leadMuted) this.audio.setLeadMuted(true);
+        this._pauseTotal += performance.now() - this._pausedPerf;
+        this.paused = false;
+      });
     }
 
     restart() {
@@ -137,14 +162,16 @@
         if (k === ' ' || k === 'enter') { this.activateSP(); e.preventDefault(); return; }
         if (KEYS[k] == null || this.paused) return;
         let lane = KEYS[k];
-        if (this.settings.lefty) lane = 4 - lane;
+        if (lane >= this.nLanes) return;
+        if (this.settings.lefty) lane = this.nLanes - 1 - lane;
         this.press(lane, this.audio.songTimeAt(performance.now()), false);
       };
       this._ku = (e) => {
         const k = e.key.toLowerCase();
         if (KEYS[k] == null) return;
         let lane = KEYS[k];
-        if (this.settings.lefty) lane = 4 - lane;
+        if (lane >= this.nLanes) return;
+        if (this.settings.lefty) lane = this.nLanes - 1 - lane;
         this.laneDown[lane] = Math.max(0, this.laneDown[lane] - 1);
       };
       this._rs = () => this.resize();
@@ -172,15 +199,16 @@
       const r = this.canvas.getBoundingClientRect();
       const x = clientX - r.left;
       const l = this.cx - this.halfW;
-      let lane = Math.floor(((x - l) / (2 * this.halfW)) * 5);
-      lane = Math.max(0, Math.min(4, lane));
-      return this.settings.lefty ? 4 - lane : lane;
+      const n = this.nLanes;
+      let lane = Math.floor(((x - l) / (2 * this.halfW)) * n);
+      lane = Math.max(0, Math.min(n - 1, lane));
+      return this.settings.lefty ? n - 1 - lane : lane;
     }
 
     press(lane, t, slide) {
       this.laneDown[lane]++;
       this.laneDownAt[lane] = t;
-      this.effects.push({ type: 'press', lane, t0: performance.now() });
+      this.effects.push({ type: 'press', lane, t0: this.now() });
       const W = this.win;
       let best = null;
       for (let i = this.idx; i < this.notes.length; i++) {
@@ -214,7 +242,7 @@
       this.rock = Math.min(1, this.rock + 0.025);
       if (n.len > 0) n.holding = true;
       if (this.leadMuted) { this.leadMuted = false; this.audio.setLeadMuted(false); }
-      const now = performance.now();
+      const now = this.now();
       if (n.open) this.effects.push({ type: 'hit', lane: -1, t0: now, sp: n.phrase >= 0 });
       else for (const l of n.lanes) this.effects.push({ type: 'hit', lane: l, t0: now });
       if (n.phraseEnd && !this.brokenPhrases.has(n.phrase)) {
@@ -244,7 +272,7 @@
       this.message('¡PODER ESTELAR!', SP_COLOR);
     }
 
-    message(text, color) { this.messages.push({ text, color, t0: performance.now() }); }
+    message(text, color) { this.messages.push({ text, color, t0: this.now() }); }
 
     // ---------------- lógica por cuadro ----------------
     update(t) {
@@ -287,7 +315,7 @@
       const secs = this.play.sections;
       while (this.sectionIdx + 1 < secs.length && secs[this.sectionIdx + 1].time <= t) {
         this.sectionIdx++;
-        this.sectionShownAt = performance.now();
+        this.sectionShownAt = this.now();
       }
       if (!this.finished && t > this.endTime) {
         this.finished = true;
@@ -314,7 +342,7 @@
       if (!this.running) return;
       this.raf = requestAnimationFrame(this._frame);
       this.audio.tick();
-      const t = this.audio.songTime();
+      const t = this.paused ? this.pausedAt : this.audio.songTime();
       if (!this.paused) this.update(t);
       if (this.running || this.finished) this.draw(t);
     }
@@ -345,13 +373,15 @@
       return { s, y: this.horizonY + (this.hitY - this.horizonY) * s };
     }
     laneX(lane, s) {
-      const vis = this.settings.lefty ? 4 - lane : lane;
-      return this.cx + (-0.8 + vis * 0.4) * this.halfW * s;
+      const n = this.nLanes;
+      const vis = this.settings.lefty ? n - 1 - lane : lane;
+      return this.cx + (-1 + (2 * vis + 1) / n) * this.halfW * s;
     }
+    allLanes() { return Array.from({ length: this.nLanes }, (_, i) => i); }
 
     draw(t) {
       this.rockShown += (this.rock - this.rockShown) * 0.12;
-      if (this.stage3d) this.stage3d.update(this.paused ? this.pausedAt : t, this);
+      if (this.stage3d) this.stage3d.update(t, this);
       this.renderer.draw(t);
     }
   }
