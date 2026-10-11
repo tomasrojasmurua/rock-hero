@@ -193,6 +193,7 @@
       const opts = {};
       if (ini.hopo_frequency) opts.hopoThreshold = Math.round((parseFloat(ini.hopo_frequency) * parsed.resolution) / 480) || 0;
       if (ini.eighthnote_hopo === '1' || ini.eighthnote_hopo === 'True') opts.eighthHopo = true;
+      if (settings.simpleChords) opts.maxChordNotes = 2;
       const playable = GH.buildPlayable(parsed, inst, diff, opts);
       loading(null);
       enterGame(playable);
@@ -394,7 +395,7 @@
         if (key === 'volume') audio.setVolume(settings.volume);
       };
     }
-    for (const [id, key] of [['s-lefty', 'lefty'], ['s-miss', 'missSound'], ['s-vibrate', 'vibrate'], ['s-stage3d', 'stage3d']]) {
+    for (const [id, key] of [['s-lefty', 'lefty'], ['s-simple-chords', 'simpleChords'], ['s-miss', 'missSound'], ['s-vibrate', 'vibrate'], ['s-stage3d', 'stage3d']]) {
       $(id).checked = !!settings[key];
       $(id).onchange = () => { settings[key] = $(id).checked; GH.settings.save(settings); };
     }
