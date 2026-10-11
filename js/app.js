@@ -567,6 +567,8 @@
   }
 
   function showRoom() {
+    // En iPhone, fuera de la app instalada, las barras de Safari y el rebote mueven la pantalla mientras se toca.
+    $('room-tip').hidden = !(/iPhone|iPad|iPod/.test(navigator.userAgent) && !navigator.standalone && !matchMedia('(display-mode: standalone)').matches);
     $('room-start').hidden = !!room;
     $('room-in').hidden = !room;
     if (room) renderRoom();
@@ -1004,7 +1006,11 @@
     // La página nunca debe desplazarse: en iPhone un desplazamiento invisible descuadra los toques.
     const unscroll = () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); };
     window.addEventListener('scroll', unscroll, { passive: true });
-    if (window.visualViewport) window.visualViewport.addEventListener('scroll', unscroll);
+    if (window.visualViewport) { window.visualViewport.addEventListener('scroll', unscroll); window.visualViewport.addEventListener('resize', unscroll); }
+    // En partida, deslizar el dedo no debe mover la página: en iPhone (Safari o el navegador de WhatsApp) rebota o mueve las barras y toda la pantalla da un tirón.
+    document.addEventListener('touchmove', (e) => {
+      if ($('game').classList.contains('active') && !e.target.closest('.sheet-card')) e.preventDefault();
+    }, { passive: false });
     $('calib-pad').addEventListener('pointerdown', calibTap);
     $('calib-cancel').onclick = () => endCalibration(true);
     document.addEventListener('visibilitychange', () => { if (document.hidden && game && game.running) pauseGame(); });
