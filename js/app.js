@@ -340,7 +340,10 @@
     $('mp-hud').hidden = !mp.inRound;
     $('mp-meter').hidden = true;
     $('p-restart').hidden = mp.inRound;
-    game.start();
+    // En sala, cada teléfono tarda distinto en llegar aquí: se descuenta lo que pasó desde el instante acordado.
+    const late = mp.startTarget ? Math.max(0, performance.now() - mp.startTarget) / 1000 : 0;
+    mp.startTarget = 0;
+    game.start(undefined, Math.max(0.05, 2.0 - late));
     spLoop();
     requestWakeLock();
   }
@@ -863,6 +866,7 @@
     mp.ended = false;
     mp.endInfo = null;
     mp.roundMode = room ? room.mode : 'gig';
+    mp.startTarget = performance.now() + ms;
     setTimeout(() => {
       if (!room || !mp.prepared) return;
       setMyState('playing');
@@ -874,11 +878,11 @@
 
   function roomTick() {
     const now = performance.now();
-    if (now - mp.lastSent > 300 && room) {
+    if (now - mp.lastSent > 100 && room) {
       mp.lastSent = now;
       room.send({ t: 'score', id: room.myId, score: Math.round(game.score), ratio: ratioOf(game), rock: game.rock });
     }
-    if (now - mp.lastHud > 250) { mp.lastHud = now; renderHud(); judgeRound(); }
+    if (now - mp.lastHud > 100) { mp.lastHud = now; renderHud(); judgeRound(); }
   }
 
   const ratioOf = (g) => (g.baseScore ? g.score / g.baseScore : 0);

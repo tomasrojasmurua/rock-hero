@@ -70,8 +70,9 @@
       return Math.max(this.lastNoteEnd + 2.5, Math.min(a, this.lastNoteEnd + 6));
     }
 
-    start(fromTime) {
-      this.audio.start(2.0, this.audioDelay, fromTime);
+    // `lead`: segundos hasta el compás cero (en multijugador se acorta lo que tardó en arrancar este teléfono).
+    start(fromTime, lead) {
+      this.audio.start(lead == null ? 2.0 : lead, this.audioDelay, fromTime);
       this.running = true;
       this.raf = requestAnimationFrame(this._frame);
     }

@@ -291,19 +291,31 @@
       return leadMs;
     }
 
-    _measure(id) {
+    // Varias muestras de ida y vuelta: la más rápida es la menos afectada por el tráfico de la red.
+    async _measure(id, samples = 6) {
+      let best = Infinity;
+      for (let i = 0; i < samples; i++) {
+        const r = await this._ping(id);
+        if (r < best) best = r;
+        if (i < samples - 1) await sleep(20);
+      }
+      return Number.isFinite(best) ? best : 300;
+    }
+
+    _ping(id) {
       return new Promise((resolve) => {
         const c = this.conns.get(id);
-        if (!c) return resolve(0);
+        if (!c) return resolve(Infinity);
         const t0 = performance.now();
         const done = (e) => {
-          if (e.t !== 'pong') return;
+          if (!e || e.t !== 'pong') return;
+          clearTimeout(timer);
           c.off('data', done);
           resolve(performance.now() - t0);
         };
+        const timer = setTimeout(() => { c.off('data', done); resolve(Infinity); }, 800);
         c.on('data', done);
         c.send({ t: 'ping' });
-        setTimeout(() => { c.off('data', done); resolve(300); }, 2000);
       });
     }
   }
