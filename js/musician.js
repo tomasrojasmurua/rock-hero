@@ -6,14 +6,43 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const BASE = 'assets/musicians/';
 const loader = new GLTFLoader();
-const texts = new Map();
-function source(name) {
-  if (!texts.has(name)) texts.set(name, fetch(BASE + name + '.gltf').then((r) => { if (!r.ok) throw new Error(name); return r.text(); }));
-  return texts.get(name);
+// Cada modelo se descarga y decodifica una sola vez; los cinco músicos usan copias que comparten geometría y texturas.
+const parsed = new Map();
+function load(name) {
+  if (!parsed.has(name)) {
+    const p = fetch(BASE + name + '.gltf')
+      .then((r) => { if (!r.ok) throw new Error(name); return r.text(); })
+      .then((text) => new Promise((res, rej) => loader.parse(text, BASE, res, rej)))
+      .then((gltf) => { if (name === 'body') slimBody(gltf.scene); return gltf; });
+    p.catch(() => parsed.delete(name));
+    parsed.set(name, p);
+  }
+  return parsed.get(name).then((gltf) => cloneRig(gltf.scene));
 }
-async function load(name) {
-  const text = await source(name);
-  return new Promise((res, rej) => loader.parse(text, BASE, res, rej));
+
+// Copia de una escena con mallas con esqueleto (como SkeletonUtils.clone): cada copia tiene sus huesos,
+// pero la geometría y los materiales son los mismos objetos.
+function cloneRig(src) {
+  const copy = src.clone();
+  const map = new Map();
+  const walk = (a, b) => { map.set(a, b); for (let i = 0; i < a.children.length; i++) walk(a.children[i], b.children[i]); };
+  walk(src, copy);
+  src.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    const c = map.get(o);
+    c.skeleton = o.skeleton.clone();
+    c.skeleton.bones = o.skeleton.bones.map((b) => map.get(b));
+    c.bind(c.skeleton, o.bindMatrix);
+  });
+  return copy;
+}
+
+// El cuerpo trae canales que no se usan (UV y color extra): fuera, para no subirlos a la GPU.
+function slimBody(scene) {
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const n of ['uv1', 'uv2', 'uv3', 'color_1']) if (o.geometry.attributes[n]) o.geometry.deleteAttribute(n);
+  });
 }
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -21,6 +50,84 @@ const DOWN = V(0, -1, 0);
 
 // Ropa: es la propia malla del cuerpo, inflada unos milímetros y recortada en el shader por zonas del cuerpo en reposo
 // (así los bordes quedan limpios y la prenda sigue el esqueleto sin geometría extra).
+// Cada prenda dibuja solo los triángulos de su zona (más un anillo de margen para que el recorte del shader decida el borde),
+// y el cuerpo deja de dibujar la piel que queda tapada por completo: unas tres veces menos triángulos por músico.
+const condFn = (cond) => new Function('ax', 'y', 'z', 'length', 'vec2', 'return ' + cond + ';');
+const glslLength = (v) => Math.hypot(v[0], v[1]), glslVec2 = (a, b) => [a, b];
+const meshInfo = new WeakMap();
+// Para cada triángulo, 7 puntos de muestra (vértices, puntos medios y centro) y vértices unidos por posición
+// (las costuras de UV duplican vértices; así los anillos de margen cruzan las costuras).
+function info(geo) {
+  if (meshInfo.has(geo)) return meshInfo.get(geo);
+  const pos = geo.attributes.position, idx = geo.index.array, nT = idx.length / 3;
+  const ids = new Int32Array(pos.count), seen = new Map();
+  for (let i = 0; i < pos.count; i++) {
+    const k = Math.round(pos.getX(i) * 1e4) + ',' + Math.round(pos.getY(i) * 1e4) + ',' + Math.round(pos.getZ(i) * 1e4);
+    if (!seen.has(k)) seen.set(k, seen.size);
+    ids[i] = seen.get(k);
+  }
+  const samples = new Float32Array(nT * 21);
+  const P = (i, o) => [pos.getX(i), pos.getY(i), pos.getZ(i)][o];
+  for (let t = 0; t < nT; t++) {
+    const a = idx[t * 3], b = idx[t * 3 + 1], c = idx[t * 3 + 2];
+    for (let o = 0; o < 3; o++) {
+      const A = P(a, o), B = P(b, o), C = P(c, o), s = t * 21 + o;
+      samples[s] = A; samples[s + 3] = B; samples[s + 6] = C;
+      samples[s + 9] = (A + B) / 2; samples[s + 12] = (B + C) / 2; samples[s + 15] = (A + C) / 2; samples[s + 18] = (A + B + C) / 3;
+    }
+  }
+  const r = { idx, nT, ids, nV: seen.size, samples };
+  meshInfo.set(geo, r);
+  return r;
+}
+// pass[t]: cuántos de los 7 puntos del triángulo t cumplen la condición
+function scoreTris(I, fn) {
+  const out = new Uint8Array(I.nT), S = I.samples;
+  for (let t = 0; t < I.nT; t++) {
+    let n = 0;
+    for (let k = 0; k < 7; k++) {
+      const s = t * 21 + k * 3, x = S[s], y = S[s + 1], z = S[s + 2];
+      if (fn(Math.abs(x), y, z, glslLength, glslVec2)) n++;
+    }
+    out[t] = n;
+  }
+  return out;
+}
+function subset(geo, keep) {
+  const I = info(geo), list = [];
+  for (let t = 0; t < I.nT; t++) if (keep[t]) list.push(I.idx[t * 3], I.idx[t * 3 + 1], I.idx[t * 3 + 2]);
+  const g = new THREE.BufferGeometry();
+  for (const [n, a] of Object.entries(geo.attributes)) g.setAttribute(n, a);
+  g.setIndex(list);
+  return g;
+}
+// Triángulos que tocan (por un vértice) a algún triángulo marcado
+function grow(I, marked) {
+  const v = new Uint8Array(I.nV), out = new Uint8Array(I.nT);
+  for (let t = 0; t < I.nT; t++) if (marked[t]) for (let k = 0; k < 3; k++) v[I.ids[I.idx[t * 3 + k]]] = 1;
+  for (let t = 0; t < I.nT; t++) for (let k = 0; k < 3; k++) if (v[I.ids[I.idx[t * 3 + k]]]) { out[t] = 1; break; }
+  return out;
+}
+const geoCache = new Map();
+function cached(key, make) { if (!geoCache.has(key)) geoCache.set(key, make()); return geoCache.get(key); }
+// Zona de una prenda: triángulos con algún punto dentro, más un anillo alrededor.
+function garmentGeometry(geo, cond) {
+  return cached('g:' + cond, () => {
+    const I = info(geo), sc = scoreTris(I, condFn(cond));
+    return subset(geo, grow(I, grow(I, sc)));
+  });
+}
+// Piel visible: se quitan los triángulos tapados por completo por la ropa, dejando dos anillos de margen en cada borde.
+function skinGeometry(geo, conds) {
+  return cached('s:' + conds.join('|'), () => {
+    const I = info(geo), fns = conds.map(condFn);
+    const covered = new Uint8Array(I.nT);
+    for (const fn of fns) { const sc = scoreTris(I, fn); for (let t = 0; t < I.nT; t++) if (sc[t] === 7) covered[t] = 1; }
+    const open = new Uint8Array(I.nT);
+    for (let t = 0; t < I.nT; t++) open[t] = covered[t] ? 0 : 1;
+    return subset(geo, grow(I, grow(I, open)));
+  });
+}
 function garment(body, cond, o) {
   const mat = new THREE.MeshStandardMaterial({ color: o.color, roughness: o.rough ?? 0.85, normalMap: body.material.normalMap, normalScale: new THREE.Vector2(0.15, 0.15) });
   const off = (o.off ?? 0.01).toFixed(4);
@@ -33,7 +140,7 @@ function garment(body, cond, o) {
       .replace('#include <common>', '#include <common>\nvarying vec3 vRest;')
       .replace('void main() {', 'void main() {\nfloat ax = abs(vRest.x), y = vRest.y, z = vRest.z;\nif (!(' + cond + ')) discard;');
   };
-  const m = new THREE.SkinnedMesh(body.geometry, mat);
+  const m = new THREE.SkinnedMesh(garmentGeometry(body.geometry, cond), mat);
   m.bind(body.skeleton, body.bindMatrix);
   m.frustumCulled = false;
   body.parent.add(m);
@@ -47,8 +154,7 @@ const STYLE_DEFAULT = { sleeves: 'short', shirt: 0x7f1d1d, pants: 0x18181b, shoe
 // Construye un músico: devuelve la misma interfaz que makeFigure (root, hips, torso, neck, head, legL, legR, armL, armR…) más sync().
 export async function buildMusician(st0) {
   const st = { ...STYLE_DEFAULT, ...st0 };
-  const gltf = await load('body');
-  const rig = gltf.scene;
+  const rig = await load('body');
   rig.updateMatrixWorld(true);
   const bone = {};
   rig.traverse((o) => { if (o.isBone) bone[o.name] = o; });
@@ -63,29 +169,32 @@ export async function buildMusician(st0) {
 
   // ---- ropa ----
   const reach = st.sleeves === 'long' ? 0.69 : st.sleeves === 'none' ? 0.2 : 0.37;
+  const covers = [];
+  const wear = (cond, o) => { covers.push(cond); return garment(body, cond, o); };
   let shirtMat;
   if (st.jacket) {
-    garment(body, topCond(Y_HEM + 0.02, 0.2, 0), { color: st.shirt, off: 0.006 });
-    shirtMat = garment(body, topCond(Y_HEM - 0.03, reach, 0.05), { color: st.jacket, off: 0.012, rough: 0.5 }).material;
-  } else shirtMat = garment(body, topCond(Y_HEM, reach, 0), { color: st.shirt, off: 0.01 }).material;
-  garment(body, `y < ${(Y_WAIST + 0.03).toFixed(3)} && y > ${Y_ANKLE.toFixed(3)} && ax < 0.26`, { color: st.pants, off: 0.008, rough: 0.9 });
-  garment(body, `y <= ${(Y_ANKLE + 0.02).toFixed(3)} && ax < 0.26`, { color: st.shoe, off: 0.024, rough: 0.55 });
+    wear(topCond(Y_HEM + 0.02, 0.2, 0), { color: st.shirt, off: 0.006 });
+    shirtMat = wear(topCond(Y_HEM - 0.03, reach, 0.05), { color: st.jacket, off: 0.012, rough: 0.5 }).material;
+  } else shirtMat = wear(topCond(Y_HEM, reach, 0), { color: st.shirt, off: 0.01 }).material;
+  wear(`y < ${(Y_WAIST + 0.03).toFixed(3)} && y > ${Y_ANKLE.toFixed(3)} && ax < 0.26`, { color: st.pants, off: 0.008, rough: 0.9 });
+  wear(`y <= ${(Y_ANKLE + 0.02).toFixed(3)} && ax < 0.26`, { color: st.shoe, off: 0.024, rough: 0.55 });
   garment(body, 'y <= 0.012 && ax < 0.26', { color: st.sole, off: 0.03, rough: 0.6 });
+  body.geometry = skinGeometry(body.geometry, covers);
 
   // ---- pelo, barba, gafas (se anclan al hueso de la cabeza) ----
   const headBone = bone.Head;
   const attach = async (name, color) => {
-    const h = await load(name);
-    h.scene.traverse((o) => {
+    const scene = await load(name);
+    scene.traverse((o) => {
       if (!o.isMesh) return;
       o.material = o.material.clone();
       o.material.color.set(color);
       o.material.side = THREE.DoubleSide;
       o.frustumCulled = false;
     });
-    rig.add(h.scene);
-    h.scene.updateMatrixWorld(true);
-    headBone.attach(h.scene);
+    rig.add(scene);
+    scene.updateMatrixWorld(true);
+    headBone.attach(scene);
   };
   const loads = [];
   if (st.hairModel) loads.push(attach(st.hairModel, st.hair));
@@ -149,12 +258,15 @@ export async function buildMusician(st0) {
     ['thigh_l', legL.hip, sLegL], ['calf_l', legL.knee, sLegL], ['foot_l', legL.foot, sLegL], ['ball_l', legL.foot, sLegL],
     ['thigh_r', legR.hip, sLegR], ['calf_r', legR.knee, sLegR], ['foot_r', legR.foot, sLegR], ['ball_r', legR.foot, sLegR],
   ].map(([n, m, s]) => ({ b: bone[n], m, k: K(n, s), name: n }));
-  for (const e of map) e.parent = e.b.parent;
+  for (const e of map) {
+    e.cur = new THREE.Quaternion();
+    e.foot = e.name.startsWith('foot_') || e.name.startsWith('ball_') ? (e.name.endsWith('l') ? legL.knee : legR.knee) : null;
+  }
+  // giro del padre de cada hueso: el del cuadro (si también se anima) o el de reposo
+  for (const e of map) e.par = (map.find((o) => o.name === e.b.parent.name) || {}).cur || rq[e.b.parent.name];
   const rootInv = bone.root.matrixWorld.clone().invert();
   const pelvisZ = rp.pelvis.z;
-  const curQ = new Map();
-  const _q = new THREE.Quaternion(), _w = new THREE.Quaternion(), _f = new THREE.Quaternion(), _p = V();
-  const flat = new THREE.Quaternion();
+  const _q = new THREE.Quaternion(), _w = new THREE.Quaternion(), _f = new THREE.Quaternion(), _p = V(), _s = V();
 
   // dedos: eje de giro elegido para que las puntas se cierren hacia la palma
   const fingerNames = ['index', 'middle', 'ring', 'pinky', 'thumb'];
@@ -183,21 +295,21 @@ export async function buildMusician(st0) {
 
   const fig = {
     root, hips, torso, neck, head, legL, legR, armL, armR, shirt: shirtMat, eyes: [], brows: [], mouth: null, imported: true, bone,
+    // Se lee la orientación de las matrices ya actualizadas (sin volver a recorrer los padres por cada hueso).
     sync() {
       root.updateMatrixWorld(true);
-      const rootQ = root.getWorldQuaternion(_f).invert();
-      // dirección del pie: casi plano, con un poco del giro de la espinilla
+      root.matrixWorld.decompose(_p, _f, _s);
+      const rootQ = _f.invert();
       for (const e of map) {
-        e.m.getWorldQuaternion(_w);
+        e.m.matrixWorld.decompose(_p, _w, _s);
         _w.premultiply(rootQ);
-        if (e.name.startsWith('foot_') || e.name.startsWith('ball_')) {
-          const knee = e.name.endsWith('l') ? legL.knee : legR.knee;
-          knee.getWorldQuaternion(_q).premultiply(rootQ);
-          flat.identity().slerp(_q, 0.2);
-          _w.copy(flat);
+        if (e.foot) {
+          // dirección del pie: casi plano, con un poco del giro de la espinilla
+          e.foot.matrixWorld.decompose(_p, _q, _s);
+          _q.premultiply(rootQ);
+          _w.identity().slerp(_q, 0.2);
         }
-        _w.multiply(e.k);
-        curQ.set(e.name, _w.clone());
+        e.cur.copy(_w).multiply(e.k);
       }
       // pelvis: posición
       hips.getWorldPosition(_p);
@@ -205,19 +317,15 @@ export async function buildMusician(st0) {
       _p.z += pelvisZ;
       _p.applyMatrix4(rootInv);
       bone.pelvis.position.copy(_p);
-      for (const e of map) {
-        const par = curQ.get(e.parent.name) || restParent(e.parent);
-        e.b.quaternion.copy(par).invert().multiply(curQ.get(e.name));
-      }
+      for (const e of map) e.b.quaternion.copy(e.par).invert().multiply(e.cur);
       for (const s of ['l', 'r']) {
         const k = (s === 'l' ? armL : armR).ck;
         for (const f of fingers[s]) {
-          f.chain.forEach((c, i) => { c.quaternion.copy(f.rest[i]).multiply(aq.setFromAxisAngle(f.axis, CURL[i] * k * f.w)); });
+          for (let i = 0; i < 3; i++) f.chain[i].quaternion.copy(f.rest[i]).multiply(aq.setFromAxisAngle(f.axis, CURL[i] * k * f.w));
         }
       }
     },
   };
-  function restParent(b) { return rq[b.name]; }
   // pelvis cuelga de "root": su orientación de reposo es la del hueso raíz
   fig.sync();
   return fig;

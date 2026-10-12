@@ -59,3 +59,10 @@ La cámara alterna el plano general con primeros planos de cada músico y planos
 Los músicos usan los modelos CC0 *Universal Base Characters* de Quaternius (`assets/musicians/`, licencia en `LICENSE-Quaternius.txt`): ropa y peinado distintos para cada puesto, y las animaciones se aplican al esqueleto del modelo desde `js/musician.js`. Si no cargan, se usan figuras simples.
 
 En *Ajustes → Banda en 3D* se puede cargar un modelo `.glb` para cada puesto. Se escala solo a la altura correcta y, si trae animaciones, reproduce la que mejor encaje con el puesto (por ejemplo, una animación de Mixamo de tocar guitarra). Los modelos se guardan solo en el navegador del jugador, no en el repositorio.
+
+## Rendimiento
+
+- Los cinco músicos comparten el modelo y sus texturas (se descargan y decodifican una sola vez). Cada prenda dibuja solo los triángulos de su zona y el cuerpo no dibuja la piel que tapa la ropa: unas tres veces menos triángulos, con el mismo aspecto.
+- Si el teléfono no llega a unos 45 FPS, el escenario 3D baja su resolución un escalón (1,5 → 1,25 → 1); si eso no ayuda, vuelve atrás. La autopista y el marcador mantienen siempre su nitidez.
+- El escenario 3D y sus shaders se preparan mientras se está en el menú, así la primera partida no espera ni da tirones.
+- La autopista copia solo la zona que ocupa en pantalla y las piezas del marcador se repintan solo cuando cambian.

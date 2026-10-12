@@ -112,6 +112,8 @@ const PERSONA = {
   vocals: { lag: 0, swayRate: 0.5, bend: 0.08, bounce: 0.15, tap: 0, tapFoot: '', step: 0.3, spread: 0.12, shift: 0.05, lean: 0.1, twist: 0.15, headbang: 0.15, ph: 4.4, seed: 3 },
 };
 
+const _down = new THREE.Vector3(); // dirección de cada haz de luz (se reutiliza en cada cuadro)
+
 // Brazos con cinemática inversa de dos huesos: la mano llega a un punto (mástil, micrófono, tambor)
 // y el codo apunta hacia `pole` (en el espacio del torso).
 const DEF_UPPER = 0.3, DEF_FORE = 0.28;
@@ -493,7 +495,11 @@ class Stage3D {
   constructor(canvas) {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: (window.devicePixelRatio || 1) < 2, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
+    // Resolución adaptable: arranca en la máxima y baja un escalón si el teléfono no llega a ~45 FPS (ver adapt()).
+    this.maxPR = Math.min(1.5, window.devicePixelRatio || 1);
+    this.pr = this.maxPR;
+    this.perf = { last: 0, sum: 0, n: 0, fast: 0, check: null, lockDown: false };
+    this.renderer.setPixelRatio(this.pr);
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0a0618);
     this.scene.fog = new THREE.Fog(0x0a0618, 14, 34);
@@ -546,7 +552,17 @@ class Stage3D {
     for (let y = 0; y < 256; y += 8) gc.fillRect(0, y, 512, 2);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
-    this.led = { canvas: c, ctx: c.getContext('2d'), bg, grid, tex, last: 0, bars: new Float32Array(32) };
+    // barras del ecualizador ya pintadas con su degradado (se estiran al alto de cada barra)
+    const bar = (stops) => {
+      const b = document.createElement('canvas');
+      b.width = 12; b.height = 220;
+      const bc = b.getContext('2d'), grd = bc.createLinearGradient(0, 220, 0, 0);
+      for (const [o, col] of stops) grd.addColorStop(o, col);
+      bc.fillStyle = grd; bc.fillRect(0, 0, 12, 220);
+      return b;
+    };
+    const barN = bar([[0, '#7c3aed'], [0.7, '#e879f9'], [1, '#4ade80']]), barSp = bar([[0, '#0e7490'], [1, '#e0f2fe']]);
+    this.led = { canvas: c, ctx: c.getContext('2d'), bg, grid, tex, last: 0, bars: new Float32Array(32), barN, barSp };
     this.wallMat = new THREE.MeshBasicMaterial({ map: tex, color: 0x999999 });
     part(new THREE.PlaneGeometry(11, 5), this.wallMat, s, [0, 2.6, -4.3]);
     // amplificadores
@@ -663,6 +679,8 @@ class Stage3D {
       this.band[role.id] = entry;
     }
     this.layout();
+    // Los shaders se compilan aquí (en paralelo si el navegador lo permite) y no en el primer cuadro de la partida.
+    try { await this.renderer.compileAsync(this.scene, this.camera); } catch (e) { /* se compilarán al dibujar */ }
   }
 
   async placeholder(role, st) {
@@ -796,7 +814,7 @@ class Stage3D {
     // luces: laten en cada pulso, más fuerte en el primero del compás y con el medidor de rock alto
     const pulse = Math.max(0, 1 - (beats % 1) * 3);
     const bar = playing && Math.floor(beats) % 4 === 0 ? pulse : 0;
-    const down = new THREE.Vector3();
+    const down = _down;
     for (const b of this.beams) {
       const ph = b.userData.ph;
       b.rotation.z = Math.sin(now * 0.7 + ph) * 0.45;
@@ -855,7 +873,43 @@ class Stage3D {
       if (e.fig.sync) e.fig.sync();
     }
     this.updateCamera(ctx, game);
+    this.adapt();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  // Si los cuadros tardan más de la cuenta durante un rato, el escenario 3D baja su resolución un escalón (1,5 → 1,25 → 1);
+  // si con eso no mejora (el límite es otro, p. ej. el modo de ahorro de batería a 30 FPS), vuelve atrás y no insiste.
+  // Tras un buen rato fluido prueba a subir otra vez, salvo que ya haya tenido que bajar desde ahí.
+  adapt() {
+    const P = this.perf, t = performance.now(), d = t - P.last;
+    P.last = t;
+    if (d <= 0 || d > 250) return; // pausa, pestaña oculta o primer cuadro
+    P.sum += d; P.n++;
+    if (P.sum < (P.check ? 2000 : 1500)) return;
+    const avg = P.sum / P.n; // tiempo medio por cuadro en la última ventana
+    P.sum = P.n = 0;
+    const c = P.check;
+    if (c) {
+      P.check = null;
+      if (c.down && avg > c.before * 0.9) { this.setPR(c.from); P.lockDown = true; }
+      if (!c.down && avg > 22) { this.setPR(c.from); this.maxPR = c.from; }
+      return;
+    }
+    if (avg > 22 && !P.lockDown && this.pr > 1) return this.stepPR(-0.25, avg);
+    P.fast = avg < 17.5 && this.pr < this.maxPR ? P.fast + 1 : 0;
+    if (P.fast >= 7) this.stepPR(0.25, avg);
+  }
+  stepPR(k, avg) {
+    const P = this.perf, from = this.pr;
+    this.setPR(Math.max(1, Math.min(this.maxPR, from + k)));
+    P.check = { down: k < 0, from, before: avg };
+    P.fast = 0;
+  }
+  setPR(pr) {
+    if (pr === this.pr) return;
+    this.pr = pr;
+    this.renderer.setPixelRatio(pr);
+    if (this.W) this.renderer.setSize(this.W, this.H, false);
   }
 
   // ---------- cámara ----------
@@ -963,11 +1017,7 @@ class Stage3D {
       const target = playing ? (0.25 + 0.75 * energy) * pulse * (0.4 + 0.6 * Math.abs(Math.sin(i * 1.7 + now * 3.1))) : 0.08;
       L.bars[i] = Math.max(target, L.bars[i] * 0.88);
       const h = L.bars[i] * 220;
-      const grd = g.createLinearGradient(0, 256, 0, 256 - h);
-      if (sp) { grd.addColorStop(0, '#0e7490'); grd.addColorStop(1, '#e0f2fe'); }
-      else { grd.addColorStop(0, '#7c3aed'); grd.addColorStop(0.7, '#e879f9'); grd.addColorStop(1, '#4ade80'); }
-      g.fillStyle = grd;
-      g.fillRect(i * w + 2, 256 - h, w - 4, h);
+      if (h >= 0.5) g.drawImage(sp ? L.barSp : L.barN, i * w + 2, 256 - h, w - 4, h);
     }
     if (pulse > 0.6 && playing) { g.fillStyle = 'rgba(255,255,255,' + (pulse - 0.6) * 0.4 + ')'; g.fillRect(0, 0, 512, 256); }
     g.drawImage(L.grid, 0, 0);
@@ -1239,3 +1289,8 @@ GH.Stage3D = {
   },
 };
 window.dispatchEvent(new Event('gh-stage3d-ready'));
+// El escenario se prepara cuando el navegador está libre en el menú, así la primera partida empieza sin esperar.
+if (GH.settings && GH.settings.load().stage3d) {
+  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 1500));
+  idle(() => { try { GH.Stage3D.get(document.getElementById('canvas3d')); } catch (e) { /* se creará al jugar */ } }, { timeout: 4000 });
+}
