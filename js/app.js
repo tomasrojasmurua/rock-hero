@@ -341,9 +341,14 @@
     $('mp-meter').hidden = true;
     $('p-restart').hidden = mp.inRound;
     // En sala, cada teléfono tarda distinto en llegar aquí: se descuenta lo que pasó desde el instante acordado.
-    const late = mp.startTarget ? Math.max(0, performance.now() - mp.startTarget) / 1000 : 0;
+    // Además se adelanta la salida de audio lo que tarda este teléfono en sonar (altavoz, Bluetooth), para que todos lo oigan a la vez.
+    let late = 0;
+    if (mp.startTarget) {
+      const cx = audio.ctx;
+      late = Math.max(0, performance.now() - mp.startTarget) / 1000 + ((cx && (cx.outputLatency || cx.baseLatency)) || 0);
+    }
     mp.startTarget = 0;
-    game.start(undefined, Math.max(0.05, 2.0 - late));
+    game.start(undefined, mp.inRound ? Math.max(0.05, 2.0 - late) : undefined);
     spLoop();
     requestWakeLock();
   }
