@@ -14,11 +14,20 @@
   }
 
   // ?peer=host:puerto apunta a otro servidor de PeerJS (para probar en una red local).
+  // Varios STUN y retransmisores TURN públicos: si los de PeerJS fallan, la conexión directa aún puede cerrarse.
+  const ICE = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' },
+  ];
+
   function peerOptions() {
     const p = new URLSearchParams(location.search).get('peer');
-    if (!p) return { debug: 0 };
+    const base = { debug: 0, config: { iceServers: ICE, sdpSemantics: 'unified-plan' } };
+    if (!p) return base;
     const [host, port] = p.split(':');
-    return { debug: 0, host, port: Number(port) || 443, secure: location.protocol === 'https:' && !/^(localhost|127\.)/.test(host), path: '/' };
+    return Object.assign(base, { host, port: Number(port) || 443, secure: location.protocol === 'https:' && !/^(localhost|127\.)/.test(host), path: '/' });
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -88,9 +97,13 @@
         this.peer = peer;
         let done = false;
         const fail = (e) => { if (done) return; done = true; peer.destroy(); reject(e); };
-        const timer = setTimeout(() => fail(new Error('No se pudo conectar con la sala. Revisa el código o prueben en la misma wifi.')), 20000);
+        const timer = setTimeout(() => fail(new Error(opened
+          ? 'Se encontró la sala pero no se pudo abrir la conexión directa. Prueben ambos con la misma wifi o con datos móviles.'
+          : 'No hay conexión con el servidor de salas. Revisa tu internet e inténtalo de nuevo.')), 25000);
         peer.on('error', (e) => fail(new Error(e.type === 'peer-unavailable' ? 'La sala ' + this.code + ' no existe o ya se cerró.' : errorText(e))));
+        let opened = false;
         peer.on('open', (id) => {
+          opened = true;
           this.myId = id;
           const c = peer.connect(PREFIX + this.code, { reliable: true, serialization: 'binary' });
           c.on('open', () => {
