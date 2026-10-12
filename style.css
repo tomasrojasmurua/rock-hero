@@ -501,3 +501,24 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 #td-info { position: absolute; left: 8px; right: 8px; top: calc(40px + var(--safe-top)); margin: 0; font: 13px/1.4 monospace; color: #fde68a; white-space: pre-wrap; pointer-events: none; }
 #td-dot { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 3px solid #f43f5e; background: rgba(244,63,94,.25); pointer-events: none; display: none; }
 #td-close { position: absolute; left: 20%; right: 20%; bottom: calc(24px + var(--safe-bottom)); height: 64px; font-size: 18px; border-radius: 14px; background: #7c3aed; border: 0; }
+
+/* ---------- Modos de multijugador: medidores ---------- */
+#mp-meter {
+  position: absolute; left: 12px; top: calc(118px + var(--safe-top)); z-index: 2; width: min(46vw, 230px);
+  padding: 6px 8px; border-radius: 10px; background: rgba(0, 0, 0, 0.5); pointer-events: none; font-size: 12px;
+}
+#mp-meter:not([hidden]) + #mp-hud { top: calc(168px + var(--safe-top)); }
+.mm-names { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-weight: 700; }
+.mm-names span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-bar { position: relative; height: 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
+.mm-bar i { position: absolute; top: 0; bottom: 0; transition: width 0.3s, background 0.3s; display: none; }
+.mm-bar u { position: absolute; top: -1px; bottom: -1px; width: 2px; background: rgba(255, 255, 255, 0.8); text-decoration: none; }
+#mp-meter[data-mode="concert"] #mm-fill { display: block; left: 0; width: 50%; background: #4ade80; }
+#mp-meter[data-mode="concert"] #mm-fill.mid { background: #fbbf24; }
+#mp-meter[data-mode="concert"] #mm-fill.low { background: #ef4444; }
+#mp-meter[data-mode="concert"] .mm-bar u { left: 5%; background: #ef4444; }
+#mp-meter[data-mode="battle"] #mm-me { display: block; right: 50%; width: 0; background: #4ade80; }
+#mp-meter[data-mode="battle"] #mm-opp { display: block; left: 50%; width: 0; background: #f87171; }
+#mp-meter[data-mode="battle"] .mm-bar u { left: calc(50% - 1px); }
+#room-modes .chip { flex: 1; text-align: center; padding: 9px 6px; }
+#room-modes .chip:disabled { opacity: 0.6; cursor: default; }

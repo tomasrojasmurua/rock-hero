@@ -338,6 +338,7 @@
     game.safeTop = safeTop();
     window.addEventListener('resize', () => { if (game) game.safeTop = safeTop(); });
     $('mp-hud').hidden = !mp.inRound;
+    $('mp-meter').hidden = true;
     $('p-restart').hidden = mp.inRound;
     game.start();
     spLoop();
@@ -445,6 +446,7 @@
     $('r-notes').textContent = r.hit + '/' + r.total;
     $('r-combo').textContent = r.maxCombo;
     show('results');
+    if (mp.inRound) { renderEndTexts(); renderRank(); }
   }
 
   function goFullscreen() {
@@ -578,7 +580,17 @@
   let room = null;
   // song: canción elegida en la sala ({meta, hash}); local: la misma canción en este teléfono;
   // prepared: notas listas para empezar; scores: id -> {score, final}.
-  const mp = { song: null, local: null, prepared: null, inRound: false, scores: {}, lastSent: 0, lastHud: 0, lastPct: -1 };
+  const mp = { song: null, local: null, prepared: null, inRound: false, scores: {}, lastSent: 0, lastHud: 0, lastPct: -1,
+    roundMode: 'gig', ended: false, endInfo: null, lastPlay: null, lastPick: null };
+  // Modos de sala. Concert: la banda comparte un medidor y se pierde si cae a cero; Batalla: 1 contra 1 con una balanza;
+  // Quick Gig: todos tocan la canción entera y se comparan los resultados.
+  const MODES = {
+    concert: { name: 'Concert', desc: 'Tocan en conjunto con un medidor de banda compartido: el que va bien levanta al resto. Si el medidor llega a cero, pierden la canción y vuelven a empezar.' },
+    battle: { name: 'Batalla', desc: '1 contra 1. Una balanza muestra quién va mejor; si se inclina demasiado hacia un lado, ese jugador gana.' },
+    gig: { name: 'Quick Gig', desc: 'Todos tocan la canción completa sin importar los fallos y comparan los resultados al final.' },
+  };
+  const CONCERT_FAIL = 0.05; // medidor de banda (promedio del "rock" de cada jugador) por debajo del cual la banda cae
+  const BATTLE_KO = 0.5; // ventaja (en puntaje / puntaje base de su canción) que da la victoria por KO
 
   // En una sala, el anfitrión elige cualquier canción; los invitados solo la de la sala.
   function forRoom(s) {
@@ -592,6 +604,8 @@
   }
 
   function showRoom() {
+    // En iPhone, fuera de la app instalada, las barras de Safari y el rebote mueven la pantalla mientras se toca.
+    $('room-tip').hidden = !(/iPhone|iPad|iPod/.test(navigator.userAgent) && !navigator.standalone && !matchMedia('(display-mode: standalone)').matches);
     $('room-start').hidden = !!room;
     $('room-in').hidden = !room;
     if (room) renderRoom();
@@ -640,7 +654,7 @@
 
   function setRoom(r) {
     room = r;
-    Object.assign(mp, { song: null, local: null, prepared: null, inRound: false, scores: {} });
+    Object.assign(mp, { song: null, local: null, prepared: null, inRound: false, scores: {}, ended: false, endInfo: null, lastPlay: null, lastPick: null, roundMode: 'gig' });
     r.on('players', () => { renderRoom(); updatePill(); })
       .on('joined', (n) => toast(n + ' entró a la sala'))
       .on('left', (n) => toast(n + ' salió de la sala'))
@@ -650,10 +664,17 @@
       .on('progress', onRoomProgress)
       .on('received', onRoomReceived)
       .on('start', (m) => scheduleRound(m.in))
-      .on('score', (m) => { mp.scores[m.id] = { score: m.score, final: false }; })
+      .on('mode', () => renderRoom())
+      .on('end', (m) => applyEnd(m.reason, m.winner))
+      .on('score', (m) => { mp.scores[m.id] = { score: m.score, ratio: m.ratio || 0, rock: m.rock, final: false }; })
       .on('pause', (m) => { if (game && mp.inRound && !game.finished) pauseGame(String(m.by || 'otro jugador'), Number(m.at)); })
       .on('resume', (m) => { if (game && mp.inRound && game.paused) resumeGame(String(m.by || 'otro jugador')); })
-      .on('final', (m) => { mp.scores[m.id] = { score: m.score, final: true, quit: m.quit, acc: m.acc, stars: m.stars }; renderRank(); });
+      .on('final', (m) => {
+        mp.scores[m.id] = { score: m.score, ratio: m.ratio || 0, final: true, quit: m.quit, acc: m.acc, stars: m.stars };
+        // En batalla, si el rival abandona, gana el que sigue.
+        if (m.quit && room.isHost && mp.inRound && !mp.ended && mp.roundMode === 'battle') endHost('ko', room.myId);
+        renderRank();
+      });
     showRoom();
   }
 
@@ -667,8 +688,9 @@
   function dropRoom() {
     room = null;
     mp.inRound = false;
-    mp.song = mp.local = mp.prepared = null;
+    mp.song = mp.local = mp.prepared = mp.lastPlay = mp.lastPick = null;
     $('mp-hud').hidden = true;
+    $('mp-meter').hidden = true;
     if (!$('room').hidden) showRoom();
     updatePill();
   }
@@ -700,14 +722,28 @@
     const pick = $('room-pick');
     if (room.isHost) { pick.textContent = meta ? 'Cambiar canción' : 'Elegir canción'; pick.disabled = false; }
     else { pick.textContent = mp.prepared ? 'Cambiar instrumento' : 'Elegir instrumento'; pick.disabled = !mp.local; }
+    const box = $('room-modes');
+    box.innerHTML = '';
+    for (const [id, md] of Object.entries(MODES)) {
+      const b = document.createElement('button');
+      b.className = 'chip' + (room.mode === id ? ' on' : '');
+      b.textContent = md.name;
+      b.disabled = !room.isHost;
+      b.onclick = () => { room.setMode(id); renderRoom(); };
+      box.appendChild(b);
+    }
+    $('room-mode-desc').textContent = (MODES[room.mode] || MODES.gig).desc;
     const go = $('room-go');
     go.hidden = !room.isHost;
     const allReady = room.players.length > 1 && room.players.every((p) => p.state === 'ready');
-    go.disabled = !allReady || !mp.prepared;
-    go.textContent = room.players.length < 2 ? 'Esperando jugadores…' : allReady ? '¡Empezar!' : 'Esperando a que todos estén listos…';
+    const wrongCount = room.mode === 'battle' && room.players.length > 2;
+    go.disabled = !allReady || !mp.prepared || wrongCount;
+    go.textContent = wrongCount ? 'Batalla es 1 contra 1 (ahora son ' + room.players.length + ')'
+      : room.players.length < 2 ? 'Esperando jugadores…' : allReady ? '¡Empezar!' : 'Esperando a que todos estén listos…';
   }
 
   function setMyState(state, extra) {
+    if (!room) return;
     const me = room.players.find((p) => p.id === room.myId);
     if (room.isHost) {
       if (me) { Object.assign(me, { state, inst: undefined, diff: undefined, pct: undefined }, extra || {}); room._sendPlayers(); }
@@ -745,6 +781,7 @@
     catch (e) { loading(null); toast('Error: ' + (e.message || e), 6000); setMyState('choosing'); return; }
     await prepareStage3D();
     mp.prepared.inst = inst;
+    mp.lastPick = { inst, diff };
     setMyState('ready', { inst, diff });
     showRoom();
   }
@@ -755,7 +792,7 @@
     mp.prepared = null;
     renderRoom();
     const local = await findLocal(s);
-    if (mp.song !== s) return;
+    if (!room || mp.song !== s) return;
     if (local) {
       mp.local = local;
       setMyState('choosing');
@@ -790,7 +827,7 @@
   }
 
   async function onRoomReceived(song) {
-    if (!mp.song || song.id !== mp.song.meta.id) return;
+    if (!room || !mp.song || song.id !== mp.song.meta.id) return;
     try {
       await GH.store.addSong(song);
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
@@ -806,6 +843,7 @@
 
   async function roomStart() {
     if (!room || !room.isHost || !mp.prepared) return;
+    if (room.mode === 'battle' && room.players.length !== 2) { toast('La batalla es 1 contra 1.'); return; }
     $('room-go').disabled = true;
     const lead = await room.startAll(1500);
     scheduleRound(lead);
@@ -815,8 +853,13 @@
     if (!mp.prepared) { toast('Tu canción no estaba lista.'); return; }
     hideRoom();
     hide('detail');
+    hide('results');
+    hide('pause');
     mp.scores = {};
     mp.inRound = true;
+    mp.ended = false;
+    mp.endInfo = null;
+    mp.roundMode = room ? room.mode : 'gig';
     setTimeout(() => {
       if (!room || !mp.prepared) return;
       setMyState('playing');
@@ -830,9 +873,103 @@
     const now = performance.now();
     if (now - mp.lastSent > 300 && room) {
       mp.lastSent = now;
-      room.send({ t: 'score', id: room.myId, score: Math.round(game.score) });
+      room.send({ t: 'score', id: room.myId, score: Math.round(game.score), ratio: ratioOf(game), rock: game.rock });
     }
-    if (now - mp.lastHud > 250) { mp.lastHud = now; renderHud(); }
+    if (now - mp.lastHud > 250) { mp.lastHud = now; renderHud(); judgeRound(); }
+  }
+
+  const ratioOf = (g) => (g.baseScore ? g.score / g.baseScore : 0);
+
+  // Jugadores que siguen tocando (sin abandonar ni terminar).
+  function livePlayers() {
+    return room.players.filter((p) => {
+      if (p.id === room.myId) return !!game && !game.finished;
+      const sc = mp.scores[p.id];
+      return !(sc && (sc.final || sc.quit));
+    });
+  }
+  function rockOf(p) {
+    if (p.id === room.myId) return game ? game.rock : 0.5;
+    const sc = mp.scores[p.id];
+    return sc && sc.rock != null ? sc.rock : 0.5;
+  }
+  // Medidor de la banda: promedio del "rock" de cada jugador; uno que va bien compensa al que falla.
+  function teamRock() {
+    const live = livePlayers();
+    if (!live.length) return 1;
+    return live.reduce((sum, p) => sum + rockOf(p), 0) / live.length;
+  }
+  // Balanza de la batalla: de -1 (el rival gana por KO) a 1 (gano yo por KO).
+  function battleBalance() {
+    const opp = room.players.find((p) => p.id !== room.myId);
+    const sc = opp && mp.scores[opp.id];
+    const mine = game ? ratioOf(game) : 0;
+    return Math.max(-1, Math.min(1, (mine - (sc ? sc.ratio || 0 : 0)) / BATTLE_KO));
+  }
+
+  // Solo el anfitrión decide si la ronda termina antes de tiempo.
+  function judgeRound() {
+    if (!room || !room.isHost || !game || mp.ended || game.finished || game.paused || countdownTimer) return;
+    if (mp.roundMode === 'concert' && livePlayers().length && teamRock() <= CONCERT_FAIL) endHost('fail');
+    else if (mp.roundMode === 'battle') {
+      const b = battleBalance();
+      if (Math.abs(b) >= 1) endHost('ko', b > 0 ? room.myId : (room.players.find((p) => p.id !== room.myId) || {}).id);
+    }
+  }
+  function endHost(reason, winner) {
+    if (mp.ended) return;
+    room.sendEnd({ reason, winner });
+    applyEnd(reason, winner);
+  }
+
+  // La ronda terminó antes de la canción (la banda cayó o hubo KO): se corta la partida y se muestra el resultado.
+  function applyEnd(reason, winner) {
+    if (!mp.inRound || !game || game.finished || mp.ended) return;
+    mp.ended = true;
+    mp.endInfo = { reason, winner };
+    cancelCountdown();
+    hide('pause');
+    const g = game;
+    const r = g.results();
+    g.finished = true;
+    g.running = false;
+    cancelAnimationFrame(g.raf);
+    try { audio.stop(); } catch (e) { /* nada */ }
+    releaseWakeLock();
+    mp.lastPlay = g.play;
+    mp.prepared = g.play;
+    // La ronda terminó para todos: los demás figuran con su último puntaje conocido.
+    for (const p of room.players) if (p.id !== room.myId) mp.scores[p.id] = Object.assign({ score: 0, ratio: 0 }, mp.scores[p.id], { final: true });
+    setMyState('done');
+    $('r-stars').textContent = '';
+    $('r-score').textContent = r.score.toLocaleString('es');
+    $('r-acc').textContent = Math.round(r.accuracy * 100) + '%';
+    $('r-notes').textContent = r.hit + '/' + r.total;
+    $('r-combo').textContent = r.maxCombo;
+    renderTop($('r-top'), [], null);
+    $('r-room').hidden = false;
+    $('r-menu').textContent = 'Volver a la sala';
+    renderEndTexts();
+    renderRank();
+    show('results');
+  }
+
+  function renderEndTexts() {
+    const again = $('r-again');
+    again.hidden = !room.isHost;
+    const info = mp.endInfo;
+    if (info && info.reason === 'fail') {
+      $('r-title').textContent = '¡La banda se vino abajo!';
+      $('r-best').textContent = room.isHost ? 'Perdieron la canción: tienen que volver a empezar.' : 'Perdieron la canción. El anfitrión puede reiniciarla.';
+      again.textContent = 'Reintentar';
+    } else if (info && info.reason === 'ko') {
+      const won = info.winner === room.myId;
+      $('r-title').textContent = won ? '¡Ganaste la batalla por KO!' : 'Perdiste la batalla';
+      $('r-best').textContent = won ? 'La balanza se inclinó a tu favor.' : 'La balanza se inclinó hacia tu rival.';
+      again.textContent = 'Revancha';
+    } else {
+      again.textContent = 'Otra vez (todos)';
+    }
   }
 
   function standings() {
@@ -840,12 +977,37 @@
     const rows = room.players.map((p) => {
       const mine = p.id === room.myId;
       const sc = mine ? { score: game ? Math.round(game.score) : 0, final: game && game.finished } : mp.scores[p.id] || { score: 0 };
-      return { name: p.name, me: mine, score: sc.score || 0, final: sc.final, quit: sc.quit };
+      return { id: p.id, name: p.name, me: mine, score: sc.score || 0, ratio: mine ? (game ? ratioOf(game) : 0) : sc.ratio || 0, final: sc.final, quit: sc.quit };
     });
-    return rows.sort((a, b) => b.score - a.score);
+    // En batalla cada uno puede tocar un instrumento distinto: se compara por puntaje relativo a su propia canción.
+    const won = mp.endInfo && mp.endInfo.reason === 'ko' ? mp.endInfo.winner : null;
+    return rows.sort((a, b) => (won ? (b.id === won) - (a.id === won) : 0) || (mp.roundMode === 'battle' ? b.ratio - a.ratio : b.score - a.score));
+  }
+
+  function renderMeter() {
+    const box = $('mp-meter');
+    if (mp.roundMode === 'gig' || !room || !game) { box.hidden = true; return; }
+    box.hidden = false;
+    box.dataset.mode = mp.roundMode;
+    if (mp.roundMode === 'concert') {
+      const v = Math.max(0, Math.min(1, teamRock()));
+      $('mm-l').textContent = 'Banda';
+      $('mm-r').textContent = '';
+      const fill = $('mm-fill');
+      fill.style.width = Math.round(v * 100) + '%';
+      fill.className = v < 0.25 ? 'low' : v < 0.5 ? 'mid' : '';
+    } else {
+      const b = battleBalance();
+      const opp = room.players.find((p) => p.id !== room.myId);
+      $('mm-l').textContent = 'Tú';
+      $('mm-r').textContent = opp ? opp.name : '';
+      $('mm-me').style.width = Math.round(Math.max(0, b) * 50) + '%';
+      $('mm-opp').style.width = Math.round(Math.max(0, -b) * 50) + '%';
+    }
   }
 
   function renderHud() {
+    renderMeter();
     const ol = $('mp-hud');
     ol.innerHTML = '';
     for (const r of standings()) {
@@ -859,9 +1021,19 @@
   }
 
   function roomFinish(r) {
-    room && room.send({ t: 'final', id: room.myId, score: r.score, acc: r.accuracy, stars: r.stars });
+    room && room.send({ t: 'final', id: room.myId, score: r.score, ratio: game ? ratioOf(game) : 0, acc: r.accuracy, stars: r.stars });
+    mp.lastPlay = game ? game.play : mp.lastPlay;
+    mp.prepared = mp.lastPlay;
     setMyState('done');
     renderRank();
+  }
+
+  // Título del resultado según el modo, cuando la canción terminó de forma natural.
+  function roundTitle(allDone, rows) {
+    if (mp.ended) return null;
+    if (mp.roundMode === 'concert') return '¡Concierto completado!';
+    if (mp.roundMode === 'battle') return allDone ? (rows[0].me ? '¡Ganaste la batalla!' : 'Perdiste la batalla') : 'Terminaste · esperando al rival…';
+    return null;
   }
 
   function renderRank() {
@@ -870,11 +1042,15 @@
     const rows = standings();
     ol.innerHTML = '';
     const allDone = rows.every((r) => r.final || r.quit);
+    const title = !$('results').hidden && roundTitle(allDone, rows);
+    if (title) $('r-title').textContent = title;
     rows.forEach((r, i) => {
       const li = document.createElement('li');
-      li.className = (r.me ? 'me ' : '') + (i === 0 && allDone ? 'win' : '');
+      // En Concert la banda gana o pierde junta: no hay ganador individual.
+      const crown = i === 0 && allDone && mp.roundMode !== 'concert';
+      li.className = (r.me ? 'me ' : '') + (crown ? 'win' : '');
       li.innerHTML = '<span></span><b></b>';
-      li.firstChild.textContent = (i === 0 && allDone ? '🏆 ' : (i + 1) + '. ') + r.name;
+      li.firstChild.textContent = (crown ? '🏆 ' : (i + 1) + '. ') + r.name;
       li.lastChild.textContent = r.quit ? 'abandonó' : r.final ? r.score.toLocaleString('es') : 'tocando… ' + r.score.toLocaleString('es');
       ol.appendChild(li);
     });
@@ -883,7 +1059,11 @@
   function endRound() {
     mp.inRound = false;
     $('mp-hud').hidden = true;
-    if (room) { setMyState(mp.local ? 'choosing' : 'lobby'); }
+    $('mp-meter').hidden = true;
+    if (room) {
+      if (mp.prepared && mp.lastPick) setMyState('ready', mp.lastPick);
+      else setMyState(mp.local ? 'choosing' : 'lobby');
+    }
   }
 
   function roomLinkText() {
@@ -1018,7 +1198,13 @@
     $('p-resume').onclick = pauseGuard(resumeGame);
     $('p-restart').onclick = pauseGuard(() => { if (performance.now() < startLockUntil) return; hide('pause'); audio.resume().then(() => game.restart()); });
     $('p-quit').onclick = pauseGuard(quitGame);
-    $('r-again').onclick = () => { hide('results'); audio.unlock(); enterGame(game.play); };
+    $('r-again').onclick = () => {
+      hide('results');
+      audio.unlock();
+      // En una sala, el anfitrión reinicia la ronda para todos con las mismas notas.
+      if (room && room.isHost && mp.inRound) { mp.prepared = mp.lastPlay || game.play; roomStart(); return; }
+      enterGame(game.play);
+    };
     $('r-menu').onclick = quitGame;
     bindRoom();
     $('btn-settings').onclick = () => { bindSettings(); renderBandList(); show('settings'); };
@@ -1029,7 +1215,11 @@
     // La página nunca debe desplazarse: en iPhone un desplazamiento invisible descuadra los toques.
     const unscroll = () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); };
     window.addEventListener('scroll', unscroll, { passive: true });
-    if (window.visualViewport) window.visualViewport.addEventListener('scroll', unscroll);
+    if (window.visualViewport) { window.visualViewport.addEventListener('scroll', unscroll); window.visualViewport.addEventListener('resize', unscroll); }
+    // En partida, deslizar el dedo no debe mover la página: en iPhone (Safari o el navegador de WhatsApp) rebota o mueve las barras y toda la pantalla da un tirón.
+    document.addEventListener('touchmove', (e) => {
+      if ($('game').classList.contains('active') && !e.target.closest('.sheet-card')) e.preventDefault();
+    }, { passive: false });
     $('calib-pad').addEventListener('pointerdown', calibTap);
     $('calib-cancel').onclick = () => endCalibration(true);
     document.addEventListener('visibilitychange', () => { if (document.hidden && game && game.running) pauseGame(); });

@@ -116,6 +116,10 @@
     <canvas id="canvas"></canvas>
     <button id="btn-pause" class="hud-btn" aria-label="Pausa">❚❚</button>
     <button id="btn-sp" class="hud-btn sp" aria-label="Poder estelar">⚡</button>
+    <div id="mp-meter" hidden>
+      <div class="mm-names"><span id="mm-l"></span><span id="mm-r"></span></div>
+      <div class="mm-bar"><i id="mm-fill"></i><i id="mm-me"></i><i id="mm-opp"></i><u></u></div>
+    </div>
     <ol id="mp-hud" hidden></ol>
     <div id="countdown" hidden></div>
   </section>
@@ -160,6 +164,7 @@
           <button id="room-join" class="btn">Unirse</button>
         </div>
         <p class="muted small">Crea una sala y comparte el link por WhatsApp. Si alguien no tiene la canción, se le envía directo desde tu teléfono.</p>
+        <p id="room-tip" class="muted small" hidden>En iPhone se juega mejor con la app instalada: abre el link en Safari, toca Compartir y elige "Añadir a pantalla de inicio". Así no se mueve la pantalla al tocar.</p>
         <button id="room-close" class="btn wide">Cerrar</button>
       </div>
       <div id="room-in" hidden>
@@ -168,6 +173,9 @@
           <button id="room-wa" class="btn primary grow">Invitar por WhatsApp</button>
           <button id="room-copy" class="btn">Copiar link</button>
         </div>
+        <h3>Modo</h3>
+        <div id="room-modes" class="chips"></div>
+        <p id="room-mode-desc" class="muted small"></p>
         <h3>Jugadores</h3>
         <ul id="room-players" class="band-list"></ul>
         <h3>Canción</h3>

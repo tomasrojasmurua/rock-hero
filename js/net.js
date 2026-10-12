@@ -41,6 +41,7 @@
       this.conns = new Map(); // id -> DataConnection (anfitrión: todos los invitados; invitado: solo el anfitrión)
       this.players = []; // [{id, name, state, inst, diff, pct}]
       this.handlers = {};
+      this.mode = 'gig'; // modo de juego de la sala: concert | battle | gig (lo elige el anfitrión)
       this.incoming = null; // canción que se está recibiendo
       this.closed = false;
     }
@@ -166,7 +167,7 @@
       switch (m.t) {
         case 'hello':
           if (!p) this.players.push({ id: from, name: String(m.name || 'Jugador').slice(0, 20), state: 'lobby' });
-          this.send({ t: 'welcome', you: from, code: this.code }, from);
+          this.send({ t: 'welcome', you: from, code: this.code, mode: this.mode }, from);
           this._sendPlayers();
           if (this.song) this.send({ t: 'song', song: this.song }, from);
           this.emit('joined', String(m.name || 'Jugador'));
@@ -193,7 +194,9 @@
 
     _guestData(m) {
       switch (m.t) {
-        case 'welcome': this.myId = m.you; break;
+        case 'welcome': this.myId = m.you; this.mode = m.mode || 'gig'; break;
+        case 'mode': this.mode = m.mode; this.emit('mode', m.mode); break;
+        case 'end': this.emit('end', m); break;
         case 'players': this.players = m.list; this.emit('players', m.list); break;
         case 'song': this.song = m.song; this.emit('song', m.song); break;
         case 'songStart':
@@ -228,6 +231,16 @@
     }
 
     // ---------- anfitrión ----------
+    setMode(mode) {
+      this.mode = mode;
+      this.send({ t: 'mode', mode });
+    }
+
+    // El anfitrión decide cuándo termina la ronda (la banda cae, KO de la batalla) y avisa a todos.
+    sendEnd(info) {
+      this.send(Object.assign({ t: 'end' }, info));
+    }
+
     setSong(song, files) {
       this.song = song;
       this.files = files;
