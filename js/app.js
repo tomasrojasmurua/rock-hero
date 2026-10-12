@@ -697,7 +697,10 @@
 
   const STATE_TEXT = { lobby: 'esperando canción', choosing: 'eligiendo instrumento', loading: 'cargando…', ready: 'listo', playing: 'tocando', done: 'terminó' };
   function stateText(p) {
-    if (p.state === 'downloading') return 'recibiendo canción ' + Math.round((p.pct || 0) * 100) + '%';
+    if (p.state === 'downloading') {
+      const mb = room && room.songBytes ? ' de ' + Math.round(room.songBytes / 1048576) + ' MB' : '';
+      return 'recibiendo canción ' + Math.round((p.pct || 0) * 100) + '%' + mb;
+    }
     if (p.state === 'ready' && p.inst) return 'listo · ' + GH.INSTRUMENTS[p.inst] + ' ' + GH.DIFF_LABELS[p.diff];
     return STATE_TEXT[p.state] || p.state || '';
   }
@@ -822,7 +825,7 @@
   }
 
   function onRoomProgress(pct) {
-    const step = Math.floor(pct * 10);
+    const step = Math.floor(pct * 50);
     if (step !== mp.lastPct) { mp.lastPct = step; setMyState('downloading', { pct }); }
   }
 

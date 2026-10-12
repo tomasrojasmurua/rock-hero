@@ -211,9 +211,10 @@
         case 'mode': this.mode = m.mode; this.emit('mode', m.mode); break;
         case 'end': this.emit('end', m); break;
         case 'players': this.players = m.list; this.emit('players', m.list); break;
-        case 'song': this.song = m.song; this.emit('song', m.song); break;
+        case 'song': this.song = m.song; this.songBytes = 0; this.emit('song', m.song); break;
         case 'songStart':
           this.incoming = { meta: m.meta, list: m.files, parts: {}, got: 0, total: m.files.reduce((s, f) => s + f.size, 0) };
+          this.songBytes = this.incoming.total;
           this.emit('progress', 0);
           break;
         case 'chunk': {
@@ -257,6 +258,7 @@
     setSong(song, files) {
       this.song = song;
       this.files = files;
+      this.songBytes = Object.values(files || {}).reduce((n, b) => n + b.size, 0);
       for (const p of this.players) if (p.id !== this.myId) p.state = 'lobby';
       this.send({ t: 'song', song });
       this._sendPlayers();
