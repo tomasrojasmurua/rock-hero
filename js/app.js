@@ -671,6 +671,7 @@
       .on('song', onRoomSong)
       .on('progress', onRoomProgress)
       .on('received', onRoomReceived)
+      .on('corrupt', onRoomCorrupt)
       .on('start', (m) => scheduleRound(m.in))
       .on('mode', () => renderRoom())
       .on('end', (m) => applyEnd(m.reason, m.winner))
@@ -837,7 +838,19 @@
     if (step !== mp.lastPct) { mp.lastPct = step; setMyState('downloading', { pct }); }
   }
 
+  // La canción llegó incompleta: se pide de nuevo (hasta 2 veces) en vez de fallar al decodificar.
+  function onRoomCorrupt() {
+    if (!room || !mp.song) return;
+    mp.retries = (mp.retries || 0) + 1;
+    if (mp.retries > 2) { toast('La canción llegó dañada. Salgan y vuelvan a entrar a la sala.', 6000); setMyState('lobby'); return; }
+    mp.lastPct = -1;
+    setMyState('downloading', { pct: 0 });
+    toast('La canción llegó incompleta, pidiéndola otra vez…');
+    room.send({ t: 'need' });
+  }
+
   async function onRoomReceived(song) {
+    mp.retries = 0;
     if (!room || !mp.song || song.id !== mp.song.meta.id) return;
     try {
       await GH.store.addSong(song);

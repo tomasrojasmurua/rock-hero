@@ -52,6 +52,8 @@
       this.handlers = {};
       this.mode = 'gig'; // modo de juego de la sala: concert | battle | gig (lo elige el anfitrión)
       this.incoming = null; // canción que se está recibiendo
+      this.sending = new Map(); // invitado -> id del envío de canción en curso
+      this.tid = 0;
       this.closed = false;
     }
 
@@ -213,13 +215,13 @@
         case 'players': this.players = m.list; this.emit('players', m.list); break;
         case 'song': this.song = m.song; this.songBytes = 0; this.emit('song', m.song); break;
         case 'songStart':
-          this.incoming = { meta: m.meta, list: m.files, parts: {}, got: 0, total: m.files.reduce((s, f) => s + f.size, 0) };
+          this.incoming = { tid: m.tid, meta: m.meta, list: m.files, parts: {}, got: 0, total: m.files.reduce((s, f) => s + f.size, 0) };
           this.songBytes = this.incoming.total;
           this.emit('progress', 0);
           break;
         case 'chunk': {
           const inc = this.incoming;
-          if (!inc) return;
+          if (!inc || m.tid !== inc.tid) return; // resto de un envío anterior: se ignora
           (inc.parts[m.f] = inc.parts[m.f] || []).push(m.data);
           inc.got += m.data.byteLength;
           this.emit('progress', inc.total ? inc.got / inc.total : 1);
@@ -227,10 +229,15 @@
         }
         case 'songEnd': {
           const inc = this.incoming;
+          if (!inc || m.tid !== inc.tid) return;
           this.incoming = null;
-          if (!inc) return;
           const files = {};
-          for (const f of inc.list) files[f.name] = new Blob(inc.parts[f.name] || [], { type: f.type });
+          let ok = true;
+          for (const f of inc.list) {
+            files[f.name] = new Blob(inc.parts[f.name] || [], { type: f.type });
+            if (files[f.name].size !== f.size) ok = false; // faltan o sobran bytes: el archivo llegó dañado
+          }
+          if (!ok) { this.emit('corrupt'); break; }
           this.emit('received', Object.assign({}, inc.meta, { files }));
           break;
         }
@@ -269,18 +276,21 @@
       if (!c || !this.files) return;
       const song = this.song;
       const files = this.files;
+      const tid = ++this.tid;
+      this.sending.set(to, tid); // un pedido nuevo cancela el envío anterior a ese invitado
+      const live = () => c.open && this.song === song && this.sending.get(to) === tid;
       const list = Object.entries(files).map(([name, b]) => ({ name, type: b.type, size: b.size }));
-      c.send({ t: 'songStart', meta: song.meta, files: list });
+      c.send({ t: 'songStart', tid, meta: song.meta, files: list });
       for (const [name, blob] of Object.entries(files)) {
         const buf = await blob.arrayBuffer();
         for (let off = 0; off < buf.byteLength; off += CHUNK) {
-          if (!c.open || this.song !== song) return;
+          if (!live()) return;
           // Contrapresión: no llenar la memoria del canal más rápido de lo que se envía.
-          while (c.open && ((c.dataChannel && c.dataChannel.bufferedAmount > 1 << 21) || (c.bufferSize || 0) > 64)) await sleep(15);
-          c.send({ t: 'chunk', f: name, data: buf.slice(off, off + CHUNK) });
+          while (live() && ((c.dataChannel && c.dataChannel.bufferedAmount > 1 << 21) || (c.bufferSize || 0) > 64)) await sleep(15);
+          c.send({ t: 'chunk', tid, f: name, data: buf.slice(off, off + CHUNK) });
         }
       }
-      c.send({ t: 'songEnd' });
+      if (live()) c.send({ t: 'songEnd', tid });
     }
 
     // Mide la latencia a cada invitado para que todos empiecen a la vez.
