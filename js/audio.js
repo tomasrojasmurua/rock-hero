@@ -78,8 +78,14 @@
       for (const n of names) {
         onProgress && onProgress('Decodificando audio ' + (++i) + '/' + names.length + '…');
         let buf;
-        try { buf = await this.decode(await files[n].arrayBuffer()); }
-        catch (e) { throw new Error('No se pudo decodificar ' + n + '. Tu navegador quizá no soporta ese formato (prueba con Chrome).'); }
+        // En iPhone un fallo de memoria se ve igual que un formato no soportado: se reintenta antes de rendirse.
+        for (let attempt = 0; ; attempt++) {
+          try { buf = await this.decode(await files[n].arrayBuffer()); break; }
+          catch (e) {
+            if (attempt >= 2) throw new Error('No se pudo decodificar ' + n + '. El archivo puede estar dañado, no haber cabido en la memoria o no ser compatible con tu navegador.');
+            await new Promise((r) => setTimeout(r, 400));
+          }
+        }
         if (leadRe && leadRe.test(n) && names.length > 1) lead = mixInto(lead, buf); else back = mixInto(back, buf);
       }
       this.backing = back ? [back] : [];

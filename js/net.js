@@ -52,6 +52,8 @@
       this.handlers = {};
       this.mode = 'gig'; // modo de juego de la sala: concert | battle | gig (lo elige el anfitrión)
       this.incoming = null; // canción que se está recibiendo
+      this.sending = new Map(); // invitado -> id del envío de canción en curso
+      this.tid = 0;
       this.closed = false;
     }
 
@@ -211,14 +213,15 @@
         case 'mode': this.mode = m.mode; this.emit('mode', m.mode); break;
         case 'end': this.emit('end', m); break;
         case 'players': this.players = m.list; this.emit('players', m.list); break;
-        case 'song': this.song = m.song; this.emit('song', m.song); break;
+        case 'song': this.song = m.song; this.songBytes = 0; this.emit('song', m.song); break;
         case 'songStart':
-          this.incoming = { meta: m.meta, list: m.files, parts: {}, got: 0, total: m.files.reduce((s, f) => s + f.size, 0) };
+          this.incoming = { tid: m.tid, meta: m.meta, list: m.files, parts: {}, got: 0, total: m.files.reduce((s, f) => s + f.size, 0) };
+          this.songBytes = this.incoming.total;
           this.emit('progress', 0);
           break;
         case 'chunk': {
           const inc = this.incoming;
-          if (!inc) return;
+          if (!inc || m.tid !== inc.tid) return; // resto de un envío anterior: se ignora
           (inc.parts[m.f] = inc.parts[m.f] || []).push(m.data);
           inc.got += m.data.byteLength;
           this.emit('progress', inc.total ? inc.got / inc.total : 1);
@@ -226,10 +229,15 @@
         }
         case 'songEnd': {
           const inc = this.incoming;
+          if (!inc || m.tid !== inc.tid) return;
           this.incoming = null;
-          if (!inc) return;
           const files = {};
-          for (const f of inc.list) files[f.name] = new Blob(inc.parts[f.name] || [], { type: f.type });
+          let ok = true;
+          for (const f of inc.list) {
+            files[f.name] = new Blob(inc.parts[f.name] || [], { type: f.type });
+            if (files[f.name].size !== f.size) ok = false; // faltan o sobran bytes: el archivo llegó dañado
+          }
+          if (!ok) { this.emit('corrupt'); break; }
           this.emit('received', Object.assign({}, inc.meta, { files }));
           break;
         }
@@ -257,6 +265,7 @@
     setSong(song, files) {
       this.song = song;
       this.files = files;
+      this.songBytes = Object.values(files || {}).reduce((n, b) => n + b.size, 0);
       for (const p of this.players) if (p.id !== this.myId) p.state = 'lobby';
       this.send({ t: 'song', song });
       this._sendPlayers();
@@ -267,18 +276,21 @@
       if (!c || !this.files) return;
       const song = this.song;
       const files = this.files;
+      const tid = ++this.tid;
+      this.sending.set(to, tid); // un pedido nuevo cancela el envío anterior a ese invitado
+      const live = () => c.open && this.song === song && this.sending.get(to) === tid;
       const list = Object.entries(files).map(([name, b]) => ({ name, type: b.type, size: b.size }));
-      c.send({ t: 'songStart', meta: song.meta, files: list });
+      c.send({ t: 'songStart', tid, meta: song.meta, files: list });
       for (const [name, blob] of Object.entries(files)) {
         const buf = await blob.arrayBuffer();
         for (let off = 0; off < buf.byteLength; off += CHUNK) {
-          if (!c.open || this.song !== song) return;
+          if (!live()) return;
           // Contrapresión: no llenar la memoria del canal más rápido de lo que se envía.
-          while (c.open && ((c.dataChannel && c.dataChannel.bufferedAmount > 1 << 21) || (c.bufferSize || 0) > 64)) await sleep(15);
-          c.send({ t: 'chunk', f: name, data: buf.slice(off, off + CHUNK) });
+          while (live() && ((c.dataChannel && c.dataChannel.bufferedAmount > 1 << 21) || (c.bufferSize || 0) > 64)) await sleep(15);
+          c.send({ t: 'chunk', tid, f: name, data: buf.slice(off, off + CHUNK) });
         }
       }
-      c.send({ t: 'songEnd' });
+      if (live()) c.send({ t: 'songEnd', tid });
     }
 
     // Mide la latencia a cada invitado para que todos empiecen a la vez.
@@ -289,19 +301,31 @@
       return leadMs;
     }
 
-    _measure(id) {
+    // Varias muestras de ida y vuelta: la más rápida es la menos afectada por el tráfico de la red.
+    async _measure(id, samples = 6) {
+      let best = Infinity;
+      for (let i = 0; i < samples; i++) {
+        const r = await this._ping(id);
+        if (r < best) best = r;
+        if (i < samples - 1) await sleep(20);
+      }
+      return Number.isFinite(best) ? best : 300;
+    }
+
+    _ping(id) {
       return new Promise((resolve) => {
         const c = this.conns.get(id);
-        if (!c) return resolve(0);
+        if (!c) return resolve(Infinity);
         const t0 = performance.now();
         const done = (e) => {
-          if (e.t !== 'pong') return;
+          if (!e || e.t !== 'pong') return;
+          clearTimeout(timer);
           c.off('data', done);
           resolve(performance.now() - t0);
         };
+        const timer = setTimeout(() => { c.off('data', done); resolve(Infinity); }, 800);
         c.on('data', done);
         c.send({ t: 'ping' });
-        setTimeout(() => { c.off('data', done); resolve(300); }, 2000);
       });
     }
   }

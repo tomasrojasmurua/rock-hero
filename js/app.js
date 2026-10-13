@@ -340,7 +340,15 @@
     $('mp-hud').hidden = !mp.inRound;
     $('mp-meter').hidden = true;
     $('p-restart').hidden = mp.inRound;
-    game.start();
+    // En sala, cada teléfono tarda distinto en llegar aquí: se descuenta lo que pasó desde el instante acordado.
+    // Además se adelanta la salida de audio lo que tarda este teléfono en sonar (altavoz, Bluetooth), para que todos lo oigan a la vez.
+    let late = 0;
+    if (mp.startTarget) {
+      const cx = audio.ctx;
+      late = Math.max(0, performance.now() - mp.startTarget) / 1000 + ((cx && (cx.outputLatency || cx.baseLatency)) || 0);
+    }
+    mp.startTarget = 0;
+    game.start(undefined, mp.inRound ? Math.max(0.05, 2.0 - late) : undefined);
     spLoop();
     requestWakeLock();
   }
@@ -663,6 +671,7 @@
       .on('song', onRoomSong)
       .on('progress', onRoomProgress)
       .on('received', onRoomReceived)
+      .on('corrupt', onRoomCorrupt)
       .on('start', (m) => scheduleRound(m.in))
       .on('mode', () => renderRoom())
       .on('end', (m) => applyEnd(m.reason, m.winner))
@@ -697,7 +706,10 @@
 
   const STATE_TEXT = { lobby: 'esperando canción', choosing: 'eligiendo instrumento', loading: 'cargando…', ready: 'listo', playing: 'tocando', done: 'terminó' };
   function stateText(p) {
-    if (p.state === 'downloading') return 'recibiendo canción ' + Math.round((p.pct || 0) * 100) + '%';
+    if (p.state === 'downloading') {
+      const mb = room && room.songBytes ? ' de ' + Math.round(room.songBytes / 1048576) + ' MB' : '';
+      return 'recibiendo canción ' + Math.round((p.pct || 0) * 100) + '%' + mb;
+    }
     if (p.state === 'ready' && p.inst) return 'listo · ' + GH.INSTRUMENTS[p.inst] + ' ' + GH.DIFF_LABELS[p.diff];
     return STATE_TEXT[p.state] || p.state || '';
   }
@@ -822,11 +834,23 @@
   }
 
   function onRoomProgress(pct) {
-    const step = Math.floor(pct * 10);
+    const step = Math.floor(pct * 50);
     if (step !== mp.lastPct) { mp.lastPct = step; setMyState('downloading', { pct }); }
   }
 
+  // La canción llegó incompleta: se pide de nuevo (hasta 2 veces) en vez de fallar al decodificar.
+  function onRoomCorrupt() {
+    if (!room || !mp.song) return;
+    mp.retries = (mp.retries || 0) + 1;
+    if (mp.retries > 2) { toast('La canción llegó dañada. Salgan y vuelvan a entrar a la sala.', 6000); setMyState('lobby'); return; }
+    mp.lastPct = -1;
+    setMyState('downloading', { pct: 0 });
+    toast('La canción llegó incompleta, pidiéndola otra vez…');
+    room.send({ t: 'need' });
+  }
+
   async function onRoomReceived(song) {
+    mp.retries = 0;
     if (!room || !mp.song || song.id !== mp.song.meta.id) return;
     try {
       await GH.store.addSong(song);
@@ -860,6 +884,7 @@
     mp.ended = false;
     mp.endInfo = null;
     mp.roundMode = room ? room.mode : 'gig';
+    mp.startTarget = performance.now() + ms;
     setTimeout(() => {
       if (!room || !mp.prepared) return;
       setMyState('playing');
@@ -871,11 +896,11 @@
 
   function roomTick() {
     const now = performance.now();
-    if (now - mp.lastSent > 300 && room) {
+    if (now - mp.lastSent > 100 && room) {
       mp.lastSent = now;
       room.send({ t: 'score', id: room.myId, score: Math.round(game.score), ratio: ratioOf(game), rock: game.rock });
     }
-    if (now - mp.lastHud > 250) { mp.lastHud = now; renderHud(); judgeRound(); }
+    if (now - mp.lastHud > 100) { mp.lastHud = now; renderHud(); judgeRound(); }
   }
 
   const ratioOf = (g) => (g.baseScore ? g.score / g.baseScore : 0);
