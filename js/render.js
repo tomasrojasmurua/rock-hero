@@ -370,8 +370,35 @@
 
     resize(dpr) {
       const gm = this.game;
+      this.dpr = dpr;
+      this.hudCache = new Map();
       this.stage.resize(gm.W, gm.H, dpr);
       this.buildHighway(dpr);
+    }
+
+    // Rectángulo en píxeles enteros del dispositivo (para copiar capas 1:1, sin remuestrear)
+    box(x0, y0, x1, y1) {
+      const d = this.dpr, gm = this.game;
+      const X0 = Math.max(0, Math.floor(x0 * d)), Y0 = Math.max(0, Math.floor(y0 * d));
+      const X1 = Math.min(Math.round(gm.W * d), Math.ceil(x1 * d)), Y1 = Math.min(Math.round(gm.H * d), Math.ceil(y1 * d));
+      return { X: X0, Y: Y0, Wd: Math.max(1, X1 - X0), Hd: Math.max(1, Y1 - Y0), d };
+    }
+    // Copia solo la parte útil de una capa a pantalla completa (la autopista ocupa una fracción de la pantalla).
+    blit(g, c, b) { g.drawImage(c, b.X, b.Y, b.Wd, b.Hd, b.X / b.d, b.Y / b.d, b.Wd / b.d, b.Hd / b.d); }
+
+    // Piezas del marcador pre-dibujadas: se repintan solo cuando cambia lo que muestran (`key`).
+    sprite(g, key, x, y, w, h, fn) {
+      let e = this.hudCache.get(key);
+      if (!e) {
+        const b = this.box(x, y, x + w, y + h);
+        const c = mk(b.Wd, b.Hd), cg = c.getContext('2d');
+        cg.setTransform(b.d, 0, 0, b.d, -b.X, -b.Y);
+        fn(cg);
+        e = { c, b };
+        if (this.hudCache.size > 64) this.hudCache.clear();
+        this.hudCache.set(key, e);
+      }
+      g.drawImage(e.c, e.b.X / e.b.d, e.b.Y / e.b.d, e.b.Wd / e.b.d, e.b.Hd / e.b.d);
     }
 
     buildHighway(dpr) {
@@ -431,6 +458,11 @@
       fg.fillStyle = fog; fg.fill();
       this.fog = f;
       this.near = near; this.far = far;
+      // zonas con contenido de cada capa (sombra exterior incluida)
+      const hx = gm.halfW * 1.09 * Math.max(near.s, far.s) + 48;
+      this.hwBox = this.box(gm.cx - hx, Math.min(near.y, far.y) - 48, gm.cx + hx, Math.max(near.y, far.y) + 48);
+      const fx = gm.halfW * 1.1 * Math.max(mid.s, far.s) + 2;
+      this.fogBox = this.box(gm.cx - fx, far.y - 4, gm.cx + fx, mid.y + 2);
     }
 
     draw(t) {
@@ -444,10 +476,10 @@
       if (gm.stage3d) g.clearRect(0, 0, W, H);
       else this.stage.draw(g, now, intensity, gm.spActive, pulse);
 
-      g.drawImage(this.highway, 0, 0, W, H);
+      this.blit(g, this.highway, this.hwBox);
       const near = this.near, far = this.far;
       this.drawBoard(g, t);
-      g.drawImage(this.overlay, 0, 0, W, H);
+      this.blit(g, this.overlay, this.hwBox);
       if (gm.spActive) {
         g.save();
         g.globalCompositeOperation = 'lighter';
@@ -571,7 +603,7 @@
         g.globalAlpha = 1;
       }
 
-      g.drawImage(this.fog, 0, 0, W, H);
+      this.blit(g, this.fog, this.fogBox);
 
       // poder estelar: rayos en los rieles y destello al activarlo
       if (gm.spActive && !this.spWas) this.spOnAt = now;
@@ -730,91 +762,109 @@
       const gm = this.game, W = gm.W, H = gm.H;
       const top = 12 + (gm.safeTop || 0);
       const base = Math.min(W, H);
+      if (this.hudTop !== top) { this.hudTop = top; this.hudCache.clear(); }
 
       // --- marcador (derecha) ---
       const pw = Math.max(140, Math.min(230, base * 0.36)), ph = pw * 0.27;
       const px = W - 12 - pw, py = top;
-      rrect(g, px - 3, py - 3, pw + 6, ph + 6, 9); g.fillStyle = metal(g, 0, py - 3, 0, py + ph + 3); g.fill();
-      rrect(g, px, py, pw, ph, 7); g.fillStyle = '#050805'; g.fill();
       const digits = String(Math.min(99999999, Math.round(gm.score))).padStart(8, ' ');
-      const dw = (pw - 16) / 8, dh = ph - 14;
-      g.save();
-      g.transform(1, 0, -0.08, 1, 0, 0);
-      for (let i = 0; i < 8; i++) seg7(g, px + 9 + i * dw + (py + 7) * 0.08, py + 7, dw * 0.72, dh, digits[i], '#4ade80', 'rgba(74,222,128,0.045)');
-      g.restore();
+      this.sprite(g, 'score' + digits, px - 4, py - 4, pw + 8, ph + 8, (g) => {
+        rrect(g, px - 3, py - 3, pw + 6, ph + 6, 9); g.fillStyle = metal(g, 0, py - 3, 0, py + ph + 3); g.fill();
+        rrect(g, px, py, pw, ph, 7); g.fillStyle = '#050805'; g.fill();
+        const dw = (pw - 16) / 8, dh = ph - 14;
+        g.save();
+        g.transform(1, 0, -0.08, 1, 0, 0);
+        for (let i = 0; i < 8; i++) seg7(g, px + 9 + i * dw + (py + 7) * 0.08, py + 7, dw * 0.72, dh, digits[i], '#4ade80', 'rgba(74,222,128,0.045)');
+        g.restore();
+      });
 
       // --- racha (cuentakilómetros) ---
       const ox = px + pw * 0.38, oy = py + ph + 8, ow = pw * 0.62, oh = ph * 0.72;
       const streak = String(Math.min(9999, gm.combo)).padStart(4, '0');
-      rrect(g, ox - 2, oy - 2, ow + 4, oh + 4, 6); g.fillStyle = metal(g, 0, oy, 0, oy + oh); g.fill();
-      const bw = ow / 4;
-      for (let i = 0; i < 4; i++) {
-        const bx = ox + i * bw + 1.5;
-        const cg = g.createLinearGradient(0, oy, 0, oy + oh);
-        const last = i === 3;
-        cg.addColorStop(0, last ? '#fef3c7' : '#f4f4f5'); cg.addColorStop(0.5, last ? '#fde68a' : '#ffffff'); cg.addColorStop(1, last ? '#d6b25e' : '#a1a1aa');
-        rrect(g, bx, oy + 1.5, bw - 3, oh - 3, 3); g.fillStyle = cg; g.fill();
-        g.fillStyle = '#111';
-        g.font = '800 ' + Math.round(oh * 0.68) + 'px system-ui, sans-serif';
-        g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.fillText(streak[i], bx + (bw - 3) / 2, oy + oh / 2 + 1);
-      }
-      g.font = '700 ' + Math.round(oh * 0.42) + 'px system-ui, sans-serif';
-      g.textAlign = 'right'; g.fillStyle = '#d4d4d8';
-      g.fillText('♪', ox - 6, oy + oh / 2);
+      this.sprite(g, 'streak' + streak, ox - oh - 6, oy - 3, ow + oh + 10, oh + 6, (g) => {
+        rrect(g, ox - 2, oy - 2, ow + 4, oh + 4, 6); g.fillStyle = metal(g, 0, oy, 0, oy + oh); g.fill();
+        const bw = ow / 4;
+        for (let i = 0; i < 4; i++) {
+          const bx = ox + i * bw + 1.5;
+          const cg = g.createLinearGradient(0, oy, 0, oy + oh);
+          const last = i === 3;
+          cg.addColorStop(0, last ? '#fef3c7' : '#f4f4f5'); cg.addColorStop(0.5, last ? '#fde68a' : '#ffffff'); cg.addColorStop(1, last ? '#d6b25e' : '#a1a1aa');
+          rrect(g, bx, oy + 1.5, bw - 3, oh - 3, 3); g.fillStyle = cg; g.fill();
+          g.fillStyle = '#111';
+          g.font = '800 ' + Math.round(oh * 0.68) + 'px system-ui, sans-serif';
+          g.textAlign = 'center'; g.textBaseline = 'middle';
+          g.fillText(streak[i], bx + (bw - 3) / 2, oy + oh / 2 + 1);
+        }
+        g.font = '700 ' + Math.round(oh * 0.42) + 'px system-ui, sans-serif';
+        g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillStyle = '#d4d4d8';
+        g.fillText('♪', ox - 6, oy + oh / 2);
+      });
 
       // --- multiplicador ---
       const m = gm.multiplier;
       const mr = ph * 0.95;
       const mx = px - mr - 10, my = py + mr * 0.95;
       const mcol = gm.spActive ? '#38bdf8' : ['#e4e4e7', '#e4e4e7', '#facc15', '#22c55e', '#c084fc'][Math.min(4, m)];
-      ell(g, mx, my, mr + 3, mr + 3); g.fillStyle = metal(g, mx - mr, my - mr, mx + mr, my + mr); g.fill();
-      ell(g, mx, my, mr - 1, mr - 1); g.fillStyle = '#0b0b10'; g.fill();
       const step = gm.combo >= 30 ? 10 : gm.combo % 10;
-      g.lineWidth = Math.max(3, mr * 0.16); g.lineCap = 'round';
-      for (let i = 0; i < 10; i++) {
-        const a0 = -PI / 2 + (i / 10) * PI * 2 + 0.07, a1 = a0 + (PI * 2) / 10 - 0.14;
-        g.strokeStyle = i < step ? mcol : 'rgba(255,255,255,0.08)';
-        g.beginPath(); g.arc(mx, my, mr * 0.8, a0, a1); g.stroke();
-      }
-      g.lineCap = 'butt';
-      g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.font = 'italic 900 ' + Math.round(mr * 0.95) + 'px system-ui, sans-serif';
-      g.lineWidth = 4; g.strokeStyle = '#000'; g.strokeText(String(m), mx + mr * 0.08, my + 2);
-      g.fillStyle = mcol; g.fillText(String(m), mx + mr * 0.08, my + 2);
-      g.font = 'italic 900 ' + Math.round(mr * 0.38) + 'px system-ui, sans-serif';
-      g.fillText('x', mx - mr * 0.4, my + mr * 0.22);
+      this.sprite(g, 'mult' + m + ':' + step + mcol, mx - mr - 5, my - mr - 5, mr * 2 + 10, mr * 2 + 10, (g) => {
+        ell(g, mx, my, mr + 3, mr + 3); g.fillStyle = metal(g, mx - mr, my - mr, mx + mr, my + mr); g.fill();
+        ell(g, mx, my, mr - 1, mr - 1); g.fillStyle = '#0b0b10'; g.fill();
+        g.lineWidth = Math.max(3, mr * 0.16); g.lineCap = 'round';
+        for (let i = 0; i < 10; i++) {
+          const a0 = -PI / 2 + (i / 10) * PI * 2 + 0.07, a1 = a0 + (PI * 2) / 10 - 0.14;
+          g.strokeStyle = i < step ? mcol : 'rgba(255,255,255,0.08)';
+          g.beginPath(); g.arc(mx, my, mr * 0.8, a0, a1); g.stroke();
+        }
+        g.lineCap = 'butt';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.font = 'italic 900 ' + Math.round(mr * 0.95) + 'px system-ui, sans-serif';
+        g.lineWidth = 4; g.strokeStyle = '#000'; g.strokeText(String(m), mx + mr * 0.08, my + 2);
+        g.fillStyle = mcol; g.fillText(String(m), mx + mr * 0.08, my + 2);
+        g.font = 'italic 900 ' + Math.round(mr * 0.38) + 'px system-ui, sans-serif';
+        g.fillText('x', mx - mr * 0.4, my + mr * 0.22);
+      });
 
       // --- medidor de rock (izquierda, junto a los botones) ---
       const gr = Math.max(28, Math.min(58, base * 0.085));
       const gx = 70 + gr, gy = top + gr + 4;
-      g.beginPath(); g.arc(gx, gy, gr + 4, PI, 0); g.lineTo(gx + gr + 4, gy + 6); g.lineTo(gx - gr - 4, gy + 6); g.closePath();
-      g.fillStyle = metal(g, gx - gr, gy - gr, gx + gr, gy); g.fill();
-      g.beginPath(); g.arc(gx, gy, gr, PI, 0); g.closePath(); g.fillStyle = '#0d0d12'; g.fill();
       const zones = [['#ef4444', 0, 1 / 3], ['#facc15', 1 / 3, 2 / 3], ['#22c55e', 2 / 3, 1]];
-      g.lineWidth = gr * 0.22;
-      for (const [c, a, b] of zones) {
-        g.strokeStyle = c;
-        g.globalAlpha = (gm.rock >= a && gm.rock <= b + 0.001) ? 1 : 0.35;
-        g.beginPath(); g.arc(gx, gy, gr * 0.78, PI + a * PI + 0.03, PI + b * PI - 0.03); g.stroke();
-      }
-      g.globalAlpha = 1;
+      const lit = zones.map(([, a, b]) => (gm.rock >= a && gm.rock <= b + 0.001 ? 1 : 0)).join('');
+      this.sprite(g, 'rock' + lit, gx - gr - 6, gy - gr - 6, gr * 2 + 12, gr + 14, (g) => {
+        g.beginPath(); g.arc(gx, gy, gr + 4, PI, 0); g.lineTo(gx + gr + 4, gy + 6); g.lineTo(gx - gr - 4, gy + 6); g.closePath();
+        g.fillStyle = metal(g, gx - gr, gy - gr, gx + gr, gy); g.fill();
+        g.beginPath(); g.arc(gx, gy, gr, PI, 0); g.closePath(); g.fillStyle = '#0d0d12'; g.fill();
+        g.lineWidth = gr * 0.22;
+        zones.forEach(([c, a, b], i) => {
+          g.strokeStyle = c;
+          g.globalAlpha = lit[i] === '1' ? 1 : 0.35;
+          g.beginPath(); g.arc(gx, gy, gr * 0.78, PI + a * PI + 0.03, PI + b * PI - 0.03); g.stroke();
+        });
+        g.globalAlpha = 1;
+      });
       const na = PI + gm.rockShown * PI;
       g.strokeStyle = '#f8fafc'; g.lineWidth = 2.5;
       g.beginPath(); g.moveTo(gx, gy); g.lineTo(gx + Math.cos(na) * gr * 0.9, gy + Math.sin(na) * gr * 0.9); g.stroke();
       ell(g, gx, gy, 4, 4); g.fillStyle = '#d4d4d8'; g.fill();
-      g.font = 'italic 900 ' + Math.round(gr * 0.3) + 'px system-ui, sans-serif';
-      g.fillStyle = '#86efac'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-      g.fillText('ROCK', gx, gy - gr * 0.2);
+      this.sprite(g, 'rocktxt', gx - gr * 0.6, gy - gr * 0.62, gr * 1.2, gr * 0.5, (g) => {
+        g.font = 'italic 900 ' + Math.round(gr * 0.3) + 'px system-ui, sans-serif';
+        g.fillStyle = '#86efac'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+        g.fillText('ROCK', gx, gy - gr * 0.2);
+      });
 
       // --- tubos de poder estelar ---
       const tw = gr * 0.36, th = gr * 0.8, ty = gy + 12;
       const ready = gm.energy >= 0.5 && !gm.spActive;
+      const tubeX = (i) => gx - gr + i * (gr * 2 / 4) + (gr * 2 / 4 - tw) / 2;
+      this.sprite(g, 'tubes', gx - gr - 2, ty - 2, gr * 2 + 4, th + 4, (g) => {
+        for (let i = 0; i < 4; i++) {
+          const tx = tubeX(i);
+          rrect(g, tx, ty, tw, th, tw / 2); g.fillStyle = 'rgba(148,163,184,0.18)'; g.fill();
+          g.strokeStyle = 'rgba(226,232,240,0.5)'; g.lineWidth = 1.2; g.stroke();
+        }
+      });
       for (let i = 0; i < 4; i++) {
-        const tx = gx - gr + i * (gr * 2 / 4) + (gr * 2 / 4 - tw) / 2;
+        const tx = tubeX(i);
         const fill = Math.max(0, Math.min(1, gm.energy * 4 - i));
-        rrect(g, tx, ty, tw, th, tw / 2); g.fillStyle = 'rgba(148,163,184,0.18)'; g.fill();
-        g.strokeStyle = 'rgba(226,232,240,0.5)'; g.lineWidth = 1.2; g.stroke();
         if (fill > 0) {
           const fh = th * fill;
           const glow = 0.75 + (ready || gm.spActive ? 0.25 * Math.sin(now / 90) : 0);
@@ -822,9 +872,14 @@
           g.fillStyle = 'rgba(125,211,252,' + glow + ')'; g.fill();
           ell(g, tx + tw / 2, ty + th - fh + 4, tw * 0.25, 2.5); g.fillStyle = 'rgba(255,255,255,0.9)'; g.fill();
         }
-        g.fillStyle = metal(g, tx, 0, tx + tw, 0);
-        g.fillRect(tx - 1, ty + th - 2, tw + 2, 5);
       }
+      this.sprite(g, 'tubebase', gx - gr - 2, ty + th - 3, gr * 2 + 4, 7, (g) => {
+        for (let i = 0; i < 4; i++) {
+          const tx = tubeX(i);
+          g.fillStyle = metal(g, tx, 0, tx + tw, 0);
+          g.fillRect(tx - 1, ty + th - 2, tw + 2, 5);
+        }
+      });
 
       // --- progreso ---
       const prog = Math.max(0, Math.min(1, t / gm.endTime));
