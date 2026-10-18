@@ -298,7 +298,7 @@
     activateSP() {
       if (this.spActive || this.energy < 0.5 || this.paused) return;
       this.spActive = true;
-      this.message('¡PODER ESTELAR!', SP_COLOR);
+      this.message('¡Poder estelar!', SP_COLOR);
     }
 
     message(text, color) { this.messages.push({ text, color, t0: this.now() }); }
