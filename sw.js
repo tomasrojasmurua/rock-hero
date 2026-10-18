@@ -1,5 +1,5 @@
 // Service worker: guarda la app para jugar sin conexión.
-const CACHE = 'frets-v34';
+const CACHE = 'frets-v35';
 const ASSETS = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
   'favicon.ico', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
