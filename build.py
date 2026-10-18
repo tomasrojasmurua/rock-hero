@@ -1,10 +1,13 @@
 """Genera dist/frets.html: la app en un solo archivo (sin service worker), útil para alojarla en cualquier sitio."""
-import re, pathlib
+import re, pathlib, base64
 root = pathlib.Path(__file__).parent
 html = (root / 'index.html').read_text()
 css = (root / 'style.css').read_text()
+# La tipografía va incrustada para que el archivo único no dependa de fonts/
+font = base64.b64encode((root / 'fonts' / 'Yellowtail.woff2').read_bytes()).decode()
+css = css.replace('url(fonts/Yellowtail.woff2)', 'url(data:font/woff2;base64,' + font + ')')
 html = html.replace('<link rel="stylesheet" href="style.css">', '<style>\n' + css + '</style>')
-html = re.sub(r'\s*<link rel="(manifest|icon|apple-touch-icon)"[^>]*>', '', html)
+html = re.sub(r'\s*<link rel="(manifest|icon|apple-touch-icon|preload)"[^>]*>', '', html)
 def inline(m):
     return '<script>\n' + (root / m.group(1)).read_text() + '</script>'
 html = re.sub(r'<script src="(js/[\w-]+\.js)"></script>', inline, html)

@@ -900,7 +900,7 @@
         const a = Math.min(1, (2500 - (now - gm.sectionShownAt)) / 500);
         g.globalAlpha = a;
         g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.font = 'italic 800 ' + Math.round(fs) + 'px system-ui, sans-serif';
+        g.font = Math.round(fs * 1.5) + 'px "Frets Script", cursive';
         g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,0.85)';
         const name = gm.play.sections[gm.sectionIdx].name;
         g.strokeText(name, gm.cx, gm.topY - fs * 0.2);
@@ -914,7 +914,7 @@
         const pop = k < 0.12 ? 0.6 + (k / 0.12) * 0.5 : 1.1 - Math.min(0.1, (k - 0.12));
         g.globalAlpha = 1 - k * k;
         g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.font = 'italic 900 ' + Math.round(fs * 1.35 * pop) + 'px system-ui, sans-serif';
+        g.font = Math.round(fs * 1.9 * pop) + 'px "Frets Script", cursive';
         const y = H * 0.42 - i * fs * 1.8 - k * 24;
         g.lineWidth = 7; g.strokeStyle = 'rgba(0,0,0,0.85)'; g.strokeText(m2.text, gm.cx, y);
         const tg = g.createLinearGradient(0, y - fs, 0, y + fs);

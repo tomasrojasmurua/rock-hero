@@ -1,8 +1,8 @@
 // Service worker: guarda la app para jugar sin conexión.
-const CACHE = 'frets-v35';
+const CACHE = 'frets-v36';
 const ASSETS = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
-  'favicon.ico', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
+  'favicon.ico', 'fonts/Yellowtail.woff2', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
   'js/core.js', 'js/chart-parser.js', 'js/midi-parser.js', 'js/importer.js',
   'js/storage.js', 'js/audio.js', 'js/render.js', 'js/game.js', 'js/stage3d.js', 'js/musician.js',
   'vendor/three/three.module.min.js', 'vendor/three/addons/loaders/GLTFLoader.js', 'vendor/three/addons/utils/BufferGeometryUtils.js', 'js/sample.js', 'vendor/peerjs/peerjs.min.js', 'js/net.js', 'js/app.js',

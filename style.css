@@ -1,4 +1,9 @@
+@font-face {
+  font-family: "Frets Script"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url(fonts/Yellowtail.woff2) format("woff2");
+}
 :root {
+  --script: "Frets Script", "Brush Script MT", cursive;
   --bg: #0b0820;
   --panel: #1a1535;
   --panel-2: #241d48;
@@ -32,7 +37,7 @@ button, input { font: inherit; color: inherit; }
 .top { display: flex; align-items: center; justify-content: space-between; }
 h1 { font-size: 28px; margin: 8px 0; letter-spacing: -0.5px; }
 h1 .logo { filter: drop-shadow(0 0 8px #a855f7); }
-h2 { margin: 0 0 6px; font-size: 22px; }
+h2 { margin: 0 0 6px; font: 400 40px/1.1 var(--script); color: #f5c35a; text-shadow: 2px 2px 0 rgba(0, 0, 0, .55); }
 h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
 .muted { color: var(--muted); margin: 2px 0; }
 .small { font-size: 13px; }
@@ -89,6 +94,7 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 .detail-head { display: flex; gap: 14px; align-items: center; }
 .detail-head > div:last-child { min-width: 0; flex: 1; }
 .detail-head h2, .detail-head p { margin: 4px 0; }
+.detail-head h2 { font: 700 22px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: inherit; text-shadow: none; }
 /* Texto largo: se recorta y se desliza de lado a lado, sin ensanchar la pantalla */
 .mq { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 100%; }
 .mq > span { display: inline-block; }
@@ -270,11 +276,11 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 @keyframes hs-logo-in { from { opacity: 0; transform: scale(1.6) rotate(-6deg); } to { opacity: 1; transform: none; } }
 .hl-pick { width: clamp(56px, 16vw, 86px); flex: none; filter: drop-shadow(0 0 14px rgba(255, 110, 30, .75)); animation: hs-pick 1.1s ease-in-out infinite alternate; }
 @keyframes hs-pick { from { transform: rotate(-8deg); } to { transform: rotate(-2deg) scale(1.05); filter: drop-shadow(0 0 22px rgba(255, 140, 40, .95)); } }
-.hl-words { display: flex; flex-direction: column; align-items: center; transform: skewX(-8deg); }
+.hl-words { display: flex; flex-direction: column; align-items: center; }
 .hl-top {
-  position: relative; font: 700 clamp(64px, 21vw, 112px)/.86 var(--hfont); font-synthesis: none; letter-spacing: 2px;
-  background: linear-gradient(180deg, #ffffff 0%, #d9dce4 38%, #737987 50%, #c4c8d2 62%, #ffffff 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
-  -webkit-text-stroke: 2px #1b1d24; paint-order: stroke fill; filter: drop-shadow(0 0 16px rgba(255, 90, 30, .55)) drop-shadow(3px 4px 0 #000);
+  position: relative; font: 400 clamp(76px, 25vw, 132px)/1 var(--script); font-synthesis: none; padding: 0 .12em .08em;
+  background: linear-gradient(180deg, #ffe08a 0%, #f5c35a 45%, #e09a2c 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-stroke: 3px #120a2e; paint-order: stroke fill; filter: drop-shadow(0 0 16px rgba(255, 90, 30, .55)) drop-shadow(3px 4px 0 #000);
 }
 .hl-top::after {
   content: attr(data-t); position: absolute; inset: 0; -webkit-text-stroke: 0; color: transparent; -webkit-background-clip: text; background-clip: text;
@@ -283,7 +289,7 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 }
 @keyframes hs-shine { 0% { background-position: 150% 0; } 40%, 100% { background-position: -60% 0; } }
 .hl-sub {
-  display: flex; align-items: center; gap: 8px; margin-top: 6px; font: 700 clamp(11px, 3.4vw, 17px)/1 var(--hfont); font-synthesis: none; white-space: nowrap;
+  display: flex; align-items: center; gap: 8px; margin-top: 0; transform: skewX(-8deg); font: 700 clamp(11px, 3.4vw, 17px)/1 var(--hfont); font-synthesis: none; white-space: nowrap;
   letter-spacing: 4px; text-transform: uppercase; color: #ffd9a0; text-shadow: 0 0 10px rgba(255, 120, 40, .8), 2px 2px 0 #000;
 }
 .hl-sub i { width: 22px; height: 3px; background: linear-gradient(90deg, transparent, #ff8a1f); }
@@ -368,7 +374,7 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 
 @media (orientation: portrait) and (max-height: 720px) {
   .home-logo { top: calc(18px + var(--safe-top)); }
-  .hl-top { font-size: clamp(54px, 17vw, 90px); }
+  .hl-top { font-size: clamp(64px, 20vw, 106px); }
   .home-menu { gap: 6px; bottom: calc(50px + var(--safe-bottom)); }
   .hm { min-height: 48px; padding-top: 5px; padding-bottom: 5px; }
   .hm-main { min-height: 58px; }
@@ -387,7 +393,7 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 }
 @media (orientation: landscape) and (max-height: 520px) {
   .home-menu { gap: 5px; translate: 0 -46%; }
-  .hl-top { font-size: clamp(46px, 17vh, 86px); }
+  .hl-top { font-size: clamp(54px, 20vh, 100px); }
   .hl-pick { width: clamp(42px, 14vh, 70px); }
   .hm { min-height: 42px; padding: 5px 14px 5px 10px; gap: 10px; }
   .hm-t { font-size: 18px; }
@@ -434,7 +440,7 @@ h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
   box-shadow: 0 8px 26px rgba(0,0,0,.55); color: #2a1d10; overscroll-behavior: contain;
 }
 .paper-title {
-  margin: 2px 0 6px; font: 400 clamp(44px, 14vw, 66px)/1 "Marker Felt", "Bradley Hand", "Segoe Script", "Comic Sans MS", cursive;
+  margin: 2px 0 6px; font: 400 clamp(48px, 15vw, 72px)/1.05 var(--script);
   color: #3a2c1a; text-shadow: 2px 2px 0 rgba(120,90,50,.35); transform: rotate(-2deg); transform-origin: left;
 }
 .paper #search { background: rgba(255,255,255,.55); border: 1px dashed #8a7650; color: #2a1d10; border-radius: 6px; margin: 4px 0 10px; }
